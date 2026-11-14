@@ -1,0 +1,33 @@
+# Build outputs and generated intermediates
+.vs/
+**/bin/
+**/obj/
+**/AppPackages/
+diagnostic-build/
+diagnostic-buildViews/
+release-diagnostic-build/
+release-diagnostic-buildViews/
+*.xbf
+
+# Local packaging and publish artifacts
+dist/
+msix-output/
+msix-test/
+msix-unpack/
+.adb-test-home*/
+/adb.exe
+/AdbWin*.dll
+/libwinpthread-1.dll
+/platform-tools/
+
+# Local test data and logs
+ui-smoke-logs/
+ui-smoke-data/
+
+# Local signing material
+*.pfx
+*.p12
+*.cer
+
+# User-specific Visual Studio settings
+*.csproj.user

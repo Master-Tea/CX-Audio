@@ -1,0 +1,10 @@
+<Page
+    x:Class="CXAudioOutput.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <Grid Padding="32,24,32,32">
+            <StackPanel x:Name="Body" MaxWidth="960" HorizontalAlignment="Stretch" Spacing="16" />
+        </Grid>
+    </ScrollViewer>
+</Page>

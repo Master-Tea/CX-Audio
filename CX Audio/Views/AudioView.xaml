@@ -1,0 +1,79 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:CXAudioOutput.ViewModels" x:Class="CXAudioOutput.Views.AudioView">
+    <StackPanel Spacing="16">
+        <Border x:Name="AudioPanel" Style="{StaticResource HeroCardStyle}" x:FieldModifier="internal">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid ColumnSpacing="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="7">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="LiveDot" Width="7" Height="7" Fill="{ThemeResource AcidBrush}" VerticalAlignment="Center" x:FieldModifier="internal"/>
+                            <TextBlock x:Name="StatusEyebrow" Text="SYSTEM AUDIO · LIVE" Style="{StaticResource EyebrowStyle}" x:FieldModifier="internal"/>
+                        </StackPanel>
+                        <TextBlock x:Name="StatusHeadline" Text="正在把声音送出去。" FontFamily="{StaticResource DisplayFont}" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" x:FieldModifier="internal"/>
+                        <TextBlock x:Name="SourceText" Text="正在准备默认音频输出设备…" Style="{StaticResource BodyMutedStyle}" MaxWidth="720" x:FieldModifier="internal"/>
+                        <StackPanel Orientation="Horizontal" Spacing="9">
+                            <TextBlock x:Name="SampleText" Style="{StaticResource CaptionStyle}" Text="48 kHz · STEREO · 16-BIT" x:FieldModifier="internal"/>
+                            <TextBlock Text="·" Foreground="{ThemeResource TextMutedBrush}"/>
+                            <TextBlock x:Name="UptimeText" Style="{StaticResource CaptionStyle}" Text="服务启动中" x:FieldModifier="internal"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Button x:Name="PauseButton" Grid.Column="1" Style="{StaticResource LimeButtonStyle}" VerticalAlignment="Top" AutomationProperties.Name="暂停或继续串流" Click="Pause_Click" x:FieldModifier="internal">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon x:Name="PauseIcon" Glyph="" FontSize="14" x:FieldModifier="internal"/>
+                            <TextBlock x:Name="PauseText" Text="暂停串流" FontWeight="SemiBold" FontSize="12" x:FieldModifier="internal"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <Grid Grid.Row="1" Height="132" Margin="0,18,0,14">
+                    <Canvas x:Name="AudioMeterCanvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" SizeChanged="AudioMeter_SizeChanged" x:FieldModifier="internal"/>
+                    <TextBlock x:Name="PeakText" Text="−∞ dB" HorizontalAlignment="Right" VerticalAlignment="Bottom" FontFamily="{StaticResource DisplayFont}" FontSize="11" Foreground="{ThemeResource TextMutedBrush}" x:FieldModifier="internal"/>
+                </Grid>
+                <Grid Grid.Row="2" RowSpacing="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Spacing="7">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="主音量" Style="{StaticResource CaptionStyle}" Foreground="{ThemeResource TextSecondaryBrush}"/>
+                            <TextBlock x:Name="MasterVolumeText" Grid.Column="1" Text="100%" FontFamily="{StaticResource DisplayFont}" FontSize="11" Foreground="{ThemeResource TextPrimaryBrush}" x:FieldModifier="internal"/>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button x:Name="MuteButton" Style="{StaticResource IconButtonStyle}" Width="34" Height="34" Click="Mute_Click" AutomationProperties.Name="静音" ToolTipService.ToolTip="静音" x:FieldModifier="internal">
+                                <FontIcon x:Name="MuteIcon" Glyph="" FontSize="15" x:FieldModifier="internal"/>
+                            </Button>
+                            <Slider x:Name="MasterVolumeSlider" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="250" AutomationProperties.Name="主音量" ValueChanged="MasterVolume_ValueChanged" x:FieldModifier="internal"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Spacing="7">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="延迟配置" Style="{StaticResource CaptionStyle}" Foreground="{ThemeResource TextSecondaryBrush}"/>
+                            <TextBlock x:Name="LatencyText" Grid.Column="1" Text="180 ms" FontFamily="{StaticResource DisplayFont}" FontSize="11" Foreground="{ThemeResource TextPrimaryBrush}" x:FieldModifier="internal"/>
+                        </Grid>
+                        <ComboBox x:Name="LatencyComboBox" HorizontalAlignment="Stretch" AutomationProperties.Name="延迟配置" SelectionChanged="Latency_SelectionChanged" x:FieldModifier="internal">
+                            <ComboBoxItem Content="低延迟 · 120 ms" Tag="low"/>
+                            <ComboBoxItem Content="均衡 · 240 ms" Tag="balanced"/>
+                            <ComboBoxItem Content="稳定 · 450 ms" Tag="stable"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+    </StackPanel>
+</UserControl>

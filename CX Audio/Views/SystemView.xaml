@@ -1,0 +1,54 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:CXAudioOutput.ViewModels" x:Class="CXAudioOutput.Views.SystemView">
+    <StackPanel Spacing="16">
+        <Border x:Name="SystemPanel" Style="{StaticResource AppCardStyle}" x:FieldModifier="internal">
+            <StackPanel Spacing="9">
+                <TextBlock Text="系统" Style="{StaticResource CardTitleStyle}"/>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="服务端口" Style="{StaticResource CaptionStyle}"/>
+                    <TextBlock x:Name="PortText" Grid.Column="1" Text="5240" FontSize="11" HorizontalAlignment="Right" x:FieldModifier="internal"/>
+                </Grid>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="网页控制台" Style="{StaticResource CaptionStyle}"/>
+                    <TextBlock x:Name="WebUrlText" Grid.Column="1" Text="—" Style="{StaticResource CaptionStyle}" FontSize="10" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" x:FieldModifier="internal"/>
+                </Grid>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="音频设备" Style="{StaticResource CaptionStyle}"/>
+                    <TextBlock x:Name="AudioDeviceText" Grid.Column="1" Text="—" Style="{StaticResource CaptionStyle}" FontSize="10" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" x:FieldModifier="internal"/>
+                </Grid>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="配置文件" Style="{StaticResource CaptionStyle}"/>
+                    <TextBlock x:Name="SettingsPathText" Grid.Column="1" Text="—" Style="{StaticResource CaptionStyle}" FontSize="9" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" x:FieldModifier="internal"/>
+                </Grid>
+                <Border Height="1" Background="{ThemeResource PanelStrokeBrush}" Margin="0,4"/>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Style="{StaticResource GhostButtonStyle}" Padding="10,5" MinHeight="30" Click="OpenLogFolder_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <FontIcon Glyph="" FontSize="11"/>
+                            <TextBlock Text="日志" FontSize="10"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource GhostButtonStyle}" Padding="10,5" MinHeight="30" Click="OpenSettingsFolder_Click">
+                        <TextBlock Text="设置目录" FontSize="10"/>
+                    </Button>
+                </StackPanel>
+                <TextBlock Text="硬件状态自动刷新 · 音频状态实时同步" Style="{StaticResource CaptionStyle}" FontSize="9" Foreground="{ThemeResource TextMutedBrush}" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

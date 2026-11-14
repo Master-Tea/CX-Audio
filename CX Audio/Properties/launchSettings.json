@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "CX Audio": {
+      "commandName": "Project"
+    },
+    "CX Audio (Demo)": {
+      "commandName": "Project",
+      "commandLineArgs": "--demo"
+    }
+  }
+}
