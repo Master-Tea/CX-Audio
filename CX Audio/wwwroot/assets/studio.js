@@ -1,6 +1,17 @@
 (() => {
   'use strict';
 
+  // The resolved desktop palette also drives the audio visualization.
+  let visualAccent = [0, 120, 212];
+  const accentPaint = alpha => `rgba(${visualAccent.join(',')},${alpha})`;
+  function refreshVisualAccent() {
+    const value = getComputedStyle(document.documentElement).getPropertyValue('--cx-accent-fill').trim();
+    if (/^#[0-9a-f]{6}$/i.test(value)) visualAccent = value.match(/[0-9a-f]{2}/gi).map(part => parseInt(part, 16));
+  }
+  document.addEventListener('cx-appearance-changed', refreshVisualAccent);
+  refreshVisualAccent();
+
+
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -78,11 +89,11 @@
   };
 
   const heroCopy = {
-    live: '让每个房间，<br><span>都有声音。</span>',
-    starting: '正在连接，<br><span>系统音频。</span>',
-    paused: '串流已暂停，<br><span>随时继续。</span>',
-    error: '输出设备，<br><span>需要检查。</span>',
-    'no-device': '没有找到，<br><span>输出设备。</span>'
+    live: '音频概览',
+    starting: '正在连接系统音频',
+    paused: '串流已暂停',
+    error: '请检查输出设备',
+    'no-device': '未找到输出设备'
   };
 
   const playbackCopy = {
@@ -148,7 +159,7 @@
       const button = event.target.closest('[data-profile]');
       if (!button) return;
       const profile = button.dataset.profile;
-      $$('.segmented button', els.profileGroup).forEach((item) => {
+      $$('.segmented [data-profile]', els.profileGroup).forEach((item) => {
         item.classList.toggle('active', item === button);
       });
       sendAction('profile', { value: profile });
@@ -253,7 +264,7 @@
         await fetch('/api/shutdown', { method: 'POST' });
         toast('正在退出…');
         setTimeout(() => {
-          document.body.innerHTML = '<div style="min-height:100vh;display:grid;place-items:center;background:#08090b;color:#8d9588;font-family:sans-serif">CX Audio 已停止。可以关闭此页面。</div>';
+          document.body.innerHTML = '<main class="shutdown-message" role="status">CX Audio 已停止。可以关闭此页面。</main>';
         }, 700);
       } catch {
         toast('退出失败，请关闭应用窗口。', true);
@@ -384,7 +395,7 @@
     els.masterValue.textContent = (message.masterVolume ?? 100) + '%';
 
     const profile = message.profile || 'balanced';
-    $$('.segmented button', els.profileGroup).forEach((button) => {
+    $$('.segmented [data-profile]', els.profileGroup).forEach((button) => {
       button.classList.toggle('active', button.dataset.profile === profile);
     });
     els.profileValue.textContent = (message.targetMs || 240) + ' ms';
@@ -681,9 +692,9 @@
     const t = reduced ? 0 : now / 1000;
 
     const gradient = ctx.createLinearGradient(0, centerY - maxHeight / 2, 0, centerY + maxHeight / 2);
-    gradient.addColorStop(0, live ? 'rgba(216,255,101,0.96)' : 'rgba(154,163,144,0.45)');
-    gradient.addColorStop(0.5, live ? 'rgba(198,240,80,0.9)' : 'rgba(130,139,121,0.35)');
-    gradient.addColorStop(1, live ? 'rgba(147,190,49,0.32)' : 'rgba(100,108,94,0.16)');
+    gradient.addColorStop(0, live ? accentPaint(0.96) : 'rgba(128,128,128,0.45)');
+    gradient.addColorStop(0.5, live ? accentPaint(0.9) : 'rgba(128,128,128,0.35)');
+    gradient.addColorStop(1, live ? accentPaint(0.32) : 'rgba(128,128,128,0.16)');
 
     ctx.fillStyle = gradient;
 
@@ -701,14 +712,14 @@
       ctx.fill();
     }
 
-    ctx.fillStyle = live ? 'rgba(216,255,101,0.28)' : 'rgba(255,255,255,0.08)';
+    ctx.fillStyle = live ? accentPaint(0.28) : 'rgba(255,255,255,0.08)';
     ctx.fillRect(0, centerY, width, 1);
 
     if (live && state.data) {
       const peak = Number(state.data.peak) || 0;
       if (peak > 0.01) {
         const y = centerY - (peak * maxHeight) / 2 - 8;
-        ctx.fillStyle = 'rgba(216,255,101,0.45)';
+        ctx.fillStyle = accentPaint(0.45);
         ctx.fillRect(0, y, width, 1);
       }
     }

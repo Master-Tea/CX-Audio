@@ -8,10 +8,10 @@ namespace CXAudioOutput.ViewModels;
 
 public sealed class NetworkAdapterViewModel : INotifyPropertyChanged
 {
-    private readonly SolidColorBrush _upBrush = new(Color.FromArgb(255, 216, 255, 101));
+    private readonly SolidColorBrush _upBrush = new();
     private readonly SolidColorBrush _downBrush = new(Color.FromArgb(255, 255, 116, 108));
     private readonly SolidColorBrush _dormantBrush = new(Color.FromArgb(255, 255, 193, 102));
-    private readonly SolidColorBrush _upPill = new(Color.FromArgb(28, 216, 255, 101));
+    private readonly SolidColorBrush _upPill = new();
     private readonly SolidColorBrush _downPill = new(Color.FromArgb(28, 255, 116, 108));
     private readonly SolidColorBrush _dormantPill = new(Color.FromArgb(28, 255, 193, 102));
 
@@ -52,6 +52,12 @@ public sealed class NetworkAdapterViewModel : INotifyPropertyChanged
     public Visibility VirtualVisibility => IsVirtual ? Visibility.Visible : Visibility.Collapsed;
     public Visibility UsbTetherVisibility => IsUsbTether ? Visibility.Visible : Visibility.Collapsed;
     public string DescriptionLine => string.IsNullOrWhiteSpace(Description) ? Name : Description;
+
+    public void SetAccent(Color color)
+    {
+        _upBrush.Color = color;
+        _upPill.Color = Color.FromArgb(28, color.R, color.G, color.B);
+    }
 
     public void Update(NetworkAdapterSnapshot snapshot, bool selected)
     {

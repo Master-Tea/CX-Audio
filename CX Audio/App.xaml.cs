@@ -8,6 +8,10 @@ public partial class App : Application
 
     public App()
     {
+        // Resolve WinUI's own labels in Chinese even on an English Windows install.
+        Microsoft.Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = "zh-CN";
+        System.Globalization.CultureInfo.DefaultThreadCurrentUICulture =
+            System.Globalization.CultureInfo.GetCultureInfo("zh-CN");
         StartupTrace.Write("App constructor: before InitializeComponent");
         InitializeComponent();
         StartupTrace.Write("App constructor: InitializeComponent completed");
@@ -19,6 +23,7 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         StartupTrace.Write($"OnLaunched: creating MainWindow, demo={Options.Demo}");
+        MainWindow.InitializeAccentResources();
         _window = new MainWindow(Options);
         StartupTrace.Write("OnLaunched: activating MainWindow");
         _window.Activate();

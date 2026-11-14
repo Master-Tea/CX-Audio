@@ -1,5 +1,5 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:CXAudioOutput.ViewModels" x:Class="CXAudioOutput.MainWindow" Title="CX Audio">
-    <Grid x:Name="RootGrid" Background="{ThemeResource PageGradientBrush}">
+    <Grid x:Name="RootGrid" Language="zh-CN" Background="{ThemeResource PageGradientBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="52"/>
             <RowDefinition Height="*"/>

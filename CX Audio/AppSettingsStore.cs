@@ -9,6 +9,7 @@ public sealed class AppSettings
     public bool HasNetworkSetup { get; set; }
     public string AdbPath { get; set; } = string.Empty;
     public bool AutoStartService { get; set; } = true;
+    public int Port { get; set; } = LaunchOptions.DefaultPort;
     public string Theme { get; set; } = "System";
     public string AccentColor { get; set; } = "System";
     public string MicaOpacity { get; set; } = "System";
@@ -20,6 +21,7 @@ public sealed class AppSettings
         HasNetworkSetup = HasNetworkSetup,
         AdbPath = AdbPath,
         AutoStartService = AutoStartService,
+        Port = Port,
         Theme = Theme,
         AccentColor = AccentColor,
         MicaOpacity = MicaOpacity
@@ -86,6 +88,7 @@ public sealed class AppSettingsStore
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             settings.AdbPath ??= string.Empty;
+            if (settings.Port is < 1 or > 65535) settings.Port = LaunchOptions.DefaultPort;
             if (settings.Theme is not ("System" or "Light" or "Dark")) settings.Theme = "System";
             settings.AccentColor = string.IsNullOrWhiteSpace(settings.AccentColor) ? "System" : settings.AccentColor;
             settings.MicaOpacity = string.IsNullOrWhiteSpace(settings.MicaOpacity) ? "System" : settings.MicaOpacity;

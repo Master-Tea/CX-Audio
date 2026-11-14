@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-desktop-appearance="pending">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -7,17 +7,15 @@
   <meta name="description" content="CX Audio — 把手机、平板或另一台电脑变成 Windows 的无线或有线扬声器。">
   <title>CX Audio · 控制台</title>
   <link rel="icon" href="/assets/favicon.png" type="image/png">
-  <link rel="stylesheet" href="/assets/fonts.css?v=1.3.0">
-  <link rel="stylesheet" href="/assets/app.css?v=1.3.0">
+  <!--cx-appearance-->
+  <script type="module" src="/assets/fluent-ui.js?v=1.3.3"></script>
+  <link rel="stylesheet" href="/assets/app.css?v=1.3.3">
 </head>
 <body class="studio-body" data-capture="starting">
-  <div class="ambient ambient-one" aria-hidden="true"></div>
-  <div class="ambient ambient-two" aria-hidden="true"></div>
-  <div class="grain" aria-hidden="true"></div>
 
   <header class="topbar">
     <a class="brand" href="/studio" aria-label="CX Audio 控制台">
-      <span class="brand-mark" aria-hidden="true"><span>CX</span><i></i></span>
+      <img class="brand-mark" src="/assets/logo.png" width="32" height="32" alt="">
       <span class="brand-name">
         <b>CX Audio</b>
         <small>WIRELESS SPEAKER SYSTEM</small>
@@ -27,19 +25,20 @@
     <nav class="topnav" aria-label="主导航">
       <a class="topnav-link active" href="#studio">控制台</a>
       <a class="topnav-link" href="#speakers">扬声器 <span id="nav-count">0</span></a>
-      <button class="topnav-link" id="setup-link" type="button">使用说明</button>
+      <fluent-button class="topnav-link" id="setup-link" type="button" appearance="transparent">使用说明</fluent-button>
     </nav>
 
     <div class="top-actions">
+      <span class="theme-sync" role="status">外观与电脑同步</span>
       <span class="connection-chip" id="connection-chip" data-state="connecting">
         <i></i><span>正在连接</span>
       </span>
-      <button class="icon-button" id="top-share" type="button" aria-label="复制收听链接" title="复制收听链接">
+      <fluent-button class="icon-button" id="top-share" type="button" aria-label="复制收听链接" title="复制收听链接" appearance="transparent" icon-only>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 12.5 15.5 6m-7 5.5 7 6M6 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Zm12 10a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z"/></svg>
-      </button>
-      <button class="icon-button" id="setup-button" type="button" aria-label="打开使用说明" title="使用说明">
+      </fluent-button>
+      <fluent-button class="icon-button" id="setup-button" type="button" aria-label="打开使用说明" title="使用说明" appearance="transparent" icon-only>
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 3.5 2.1c-.8.4-1.2 1-1.2 1.9v.4M12 17.4v.1"/></svg>
-      </button>
+      </fluent-button>
     </div>
   </header>
 
@@ -53,16 +52,16 @@
               <span class="live-dot" id="live-dot" aria-hidden="true"></span>
               <span id="stream-eyebrow">系统音频 · 正在启动</span>
             </p>
-            <h1 id="hero-title">让每个房间，<br><span>都有声音。</span></h1>
+            <h1 id="hero-title">音频概览</h1>
             <p class="hero-sub" id="hero-sub">
               正在从 <strong id="device-name">系统输出</strong> 捕获音频
             </p>
           </div>
           <div class="hero-actions">
-            <button class="button button-ghost" id="pause-button" type="button">
+            <fluent-button class="button button-ghost" id="pause-button" type="button" appearance="transparent">
               <svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6v12M15 6v12"/></svg>
               <span id="pause-label">暂停串流</span>
-            </button>
+            </fluent-button>
           </div>
         </div>
 
@@ -82,10 +81,10 @@
               <strong id="master-value">100%</strong>
             </div>
             <div class="slider-row">
-              <button class="icon-button small" id="mute-button" type="button" aria-label="静音" aria-pressed="false">
+              <fluent-button class="icon-button small" id="mute-button" type="button" aria-label="静音" aria-pressed="false" appearance="transparent" icon-only>
                 <svg class="icon-volume-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
                 <svg class="icon-volume-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4H4Z"/><path d="m16 10 5 5m0-5-5 5"/></svg>
-              </button>
+              </fluent-button>
               <input class="range master-range" id="master-volume" type="range" min="0" max="100" step="1" value="100" aria-label="主音量">
             </div>
           </div>
@@ -98,9 +97,9 @@
               <strong id="profile-value">180 ms</strong>
             </div>
             <div class="segmented" id="profile-group" role="group" aria-label="延迟配置">
-              <button type="button" data-profile="low">低延迟</button>
-              <button type="button" data-profile="balanced" class="active">均衡</button>
-              <button type="button" data-profile="stable">稳定</button>
+              <fluent-button type="button" data-profile="low" appearance="secondary">低延迟</fluent-button>
+              <fluent-button type="button" data-profile="balanced" class="active" appearance="secondary">均衡</fluent-button>
+              <fluent-button type="button" data-profile="stable" appearance="secondary">稳定</fluent-button>
             </div>
           </div>
         </div>
@@ -112,7 +111,7 @@
             <p class="eyebrow">加入收听</p>
             <h2>扫描二维码</h2>
           </div>
-          <span class="mini-live"><i></i>LIVE</span>
+          <span class="mini-live"><i></i>正在播放</span>
         </div>
 
         <div class="qr-shell">
@@ -129,9 +128,9 @@
         <div class="access-row">
           <span class="access-label">访问码</span>
           <strong id="access-code">······</strong>
-          <button class="text-icon-button" id="rotate-code" type="button" aria-label="更换访问码" title="更换访问码">
+          <fluent-button class="text-icon-button" id="rotate-code" type="button" aria-label="更换访问码" title="更换访问码" appearance="transparent" icon-only>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
-          </button>
+          </fluent-button>
         </div>
 
         <div class="url-row">
@@ -139,10 +138,10 @@
             <select id="address-select" aria-label="选择网络地址"></select>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
           </div>
-          <button class="copy-button" id="copy-button" type="button">
+          <fluent-button class="copy-button" id="copy-button" type="button" appearance="transparent">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
             <span>复制</span>
-          </button>
+          </fluent-button>
         </div>
         <p class="share-url" id="share-url">正在准备链接…</p>
         <p class="net-warning" id="net-warning" hidden>未检测到局域网地址，请先连接 Wi-Fi 或网线。</p>
@@ -183,6 +182,7 @@
     </section>
 
     <footer class="site-footer">
+    <span class="theme-sync" role="status">外观与电脑同步</span>
       <span class="footer-brand"><i></i>CX AUDIO</span>
       <span>本地串流 · 不上传云端</span>
       <span class="footer-version" id="footer-version">v1.3.0</span>
@@ -195,9 +195,9 @@
         <p class="eyebrow">快速开始</p>
         <h2>三步，让声音走起来。</h2>
       </div>
-      <button class="icon-button" id="close-setup" type="button" aria-label="关闭">
+      <fluent-button class="icon-button" id="close-setup" type="button" aria-label="关闭" appearance="transparent" icon-only>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
-      </button>
+      </fluent-button>
     </div>
 
     <div class="steps">
@@ -230,9 +230,9 @@
         <p>首次运行时请在 Windows 防火墙提示中选择“允许访问”，并勾选“专用网络”。也可以管理员身份运行：</p>
         <div class="command-row">
           <code id="firewall-command">New-NetFirewallRule -DisplayName "CX Audio" -Direction Inbound -Protocol TCP -LocalPort 5240 -Action Allow -Profile Private</code>
-          <button class="text-icon-button" id="copy-firewall" type="button" aria-label="复制防火墙命令">
+          <fluent-button class="text-icon-button" id="copy-firewall" type="button" aria-label="复制防火墙命令" appearance="transparent" icon-only>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
-          </button>
+          </fluent-button>
         </div>
       </div>
     </div>
@@ -240,8 +240,8 @@
     <div class="modal-foot">
       <span>访问码每次启动都会更新。关闭此窗口不会中断串流。</span>
       <div>
-        <button class="button button-danger-ghost" id="quit-button" type="button">退出应用</button>
-        <button class="button button-primary" id="done-setup" type="button">知道了</button>
+        <fluent-button class="button button-danger-ghost" id="quit-button" type="button" appearance="transparent">退出应用</fluent-button>
+        <fluent-button class="button button-primary" id="done-setup" type="button" appearance="primary">知道了</fluent-button>
       </div>
     </div>
   </dialog>
@@ -256,9 +256,9 @@
           <h3 class="speaker-name">设备</h3>
           <p class="speaker-meta">浏览器 · 192.168.0.0</p>
         </div>
-        <button class="icon-button small card-close" type="button" data-act="kick" aria-label="断开此设备" title="断开此设备">
+        <fluent-button class="icon-button small card-close" type="button" data-act="kick" aria-label="断开此设备" title="断开此设备" appearance="transparent" icon-only>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
-        </button>
+        </fluent-button>
       </div>
       <div class="speaker-metrics">
         <div class="metric"><span>网络</span><strong data-field="rtt">--</strong></div>
@@ -266,24 +266,24 @@
         <div class="metric"><span>状态</span><strong data-field="state">缓冲中</strong></div>
       </div>
       <div class="speaker-volume">
-        <button class="icon-button small card-mute" type="button" data-act="mute" aria-label="静音此设备" aria-pressed="false">
+        <fluent-button class="icon-button small card-mute" type="button" data-act="mute" aria-label="静音此设备" aria-pressed="false" appearance="transparent" icon-only>
           <svg class="icon-volume-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>
           <svg class="icon-volume-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4H4Z"/><path d="m16 10 5 5m0-5-5 5"/></svg>
-        </button>
+        </fluent-button>
         <input class="range card-range" type="range" min="0" max="100" step="1" value="100" aria-label="设备音量">
         <span class="card-volume-value" data-field="volume">100%</span>
       </div>
       <div class="speaker-actions">
-        <button class="text-button card-identify" type="button" data-act="identify">
+        <fluent-button class="text-button card-identify" type="button" data-act="identify" appearance="transparent">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4M9 7v10M13 4v16M17 7v10M21 10v4"/></svg>
           找到它
-        </button>
+        </fluent-button>
         <span class="speaker-underruns" data-field="underruns">连接稳定</span>
       </div>
     </article>
   </template>
 
-  <script src="/assets/qrcode.js?v=1.3.0"></script>
-  <script src="/assets/studio.js?v=1.3.0"></script>
+  <script defer src="/assets/qrcode.js?v=1.3.3"></script>
+  <script defer src="/assets/studio.js?v=1.3.3"></script>
 </body>
 </html>

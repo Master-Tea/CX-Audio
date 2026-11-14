@@ -1,6 +1,17 @@
 (() => {
   'use strict';
 
+  // The resolved desktop palette also drives the audio visualization.
+  let visualAccent = [0, 120, 212];
+  const accentPaint = alpha => `rgba(${visualAccent.join(',')},${alpha})`;
+  function refreshVisualAccent() {
+    const value = getComputedStyle(document.documentElement).getPropertyValue('--cx-accent-fill').trim();
+    if (/^#[0-9a-f]{6}$/i.test(value)) visualAccent = value.match(/[0-9a-f]{2}/gi).map(part => parseInt(part, 16));
+  }
+  document.addEventListener('cx-appearance-changed', refreshVisualAccent);
+  refreshVisualAccent();
+
+
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -210,7 +221,7 @@
     });
 
     els.playerView.addEventListener('click', (event) => {
-      if (event.target.closest('button, input, select, textarea, dialog, a')) return;
+      if (event.target.closest('button, fluent-button, fluent-switch, input, select, textarea, dialog, a')) return;
       if (R.mediaPaused) {
         setMediaPaused(false);
         return;
@@ -866,7 +877,7 @@
           title: R.hostName || 'CX Audio',
           artist: R.wired ? 'USB 有线 · 系统音频' : '本地网络 · 系统音频',
           album: 'CX Audio',
-          artwork: [{ src: '/assets/cover.png', sizes: '256x256', type: 'image/png' }]
+          artwork: [{ src: '/assets/cover.png', sizes: '300x300', type: 'image/png' }]
         });
       }
       navigator.mediaSession.playbackState = (R.streamPlaying && !R.mediaPaused) ? 'playing' : 'paused';
@@ -1700,8 +1711,8 @@
       const alpha = live ? 0.24 + value * 0.7 : 0.08 + value * 0.15;
       ctx.beginPath();
       ctx.strokeStyle = identifying
-        ? 'rgba(239,255,198,' + (0.45 + value * 0.5) + ')'
-        : 'rgba(216,255,101,' + alpha + ')';
+        ? accentPaint(0.45 + value * 0.5)
+        : accentPaint(alpha);
       ctx.lineWidth = size * 0.0036;
       ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
       ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
@@ -1712,13 +1723,13 @@
 
     ctx.beginPath();
     ctx.arc(center, center, size * 0.285, 0, Math.PI * 2);
-    ctx.strokeStyle = live ? 'rgba(216,255,101,0.17)' : 'rgba(216,255,101,0.08)';
+    ctx.strokeStyle = live ? accentPaint(0.17) : accentPaint(0.08);
     ctx.lineWidth = 1;
     ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(center, center, size * 0.405, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(216,255,101,0.06)';
+    ctx.strokeStyle = accentPaint(0.06);
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 9]);
     ctx.stroke();
@@ -1733,7 +1744,7 @@
       0,
       Math.PI * 2
     );
-    ctx.fillStyle = identifying ? '#f2ffd0' : 'rgba(216,255,101,0.65)';
+    ctx.fillStyle = identifying ? accentPaint(1) : accentPaint(0.65);
     ctx.fill();
   }
 

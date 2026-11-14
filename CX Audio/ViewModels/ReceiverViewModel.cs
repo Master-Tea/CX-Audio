@@ -8,9 +8,9 @@ namespace CXAudioOutput.ViewModels;
 
 public sealed class ReceiverViewModel : INotifyPropertyChanged
 {
-    private readonly SolidColorBrush _playingBrush = new(Color.FromArgb(255, 216, 255, 101));
+    private readonly SolidColorBrush _playingBrush = new();
     private readonly SolidColorBrush _bufferingBrush = new(Color.FromArgb(255, 255, 193, 102));
-    private readonly SolidColorBrush _mutedBrush = new(Color.FromArgb(255, 114, 123, 111));
+    private readonly SolidColorBrush _mutedBrush = new(Color.FromArgb(255, 128, 128, 128));
 
     private string _name = string.Empty;
     private string _meta = string.Empty;
@@ -47,6 +47,8 @@ public sealed class ReceiverViewModel : INotifyPropertyChanged
     public Brush StatusBrush { get => _statusBrush; private set => Set(ref _statusBrush, value); }
     public Brush HealthBrush { get => _healthBrush; private set => Set(ref _healthBrush, value); }
     public Visibility MutedVisibility => Muted ? Visibility.Visible : Visibility.Collapsed;
+
+    public void SetAccent(Color color) => _playingBrush.Color = color;
 
     public void Update(ReceiverSnapshot snapshot)
     {

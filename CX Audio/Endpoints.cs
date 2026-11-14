@@ -73,6 +73,29 @@ public static class Endpoints
 
     public static void MapCxEndpoints(this WebApplication app, LaunchOptions options)
     {
+        app.MapGet("/api/appearance", (HttpContext context, AppState state) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            return state.Appearance is { } appearance
+                ? Results.Json(appearance) : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        });
+        app.MapGet("/api/appearance/events", async (HttpContext context, AppState state) =>
+        {
+            context.Response.ContentType = "text/event-stream; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, no-store";
+            context.Response.Headers["X-Accel-Buffering"] = "no";
+            var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            try
+            {
+                await foreach (var appearance in state.WatchAppearance(context.RequestAborted))
+                {
+                    await context.Response.WriteAsync("data: " + JsonSerializer.Serialize(appearance, jsonOptions) + "\n\n", context.RequestAborted);
+                    await context.Response.Body.FlushAsync(context.RequestAborted);
+                }
+            }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested) { }
+        });
+
         app.MapGet("/api/health", (AppState state) => Results.Json(new
         {
             ok = true,
@@ -136,7 +159,18 @@ public static class Endpoints
         var path = Path.Combine(webRoot ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"), fileName);
         if (!File.Exists(path)) return Results.NotFound();
         context.Response.Headers.CacheControl = "no-store, max-age=0";
-        return Results.File(path, "text/html; charset=utf-8");
+        var html = File.ReadAllText(path);
+        if (context.RequestServices.GetRequiredService<AppState>().Appearance is { } appearance)
+        {
+            var json = JsonSerializer.Serialize(appearance, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var metadata = "<meta name=\"cx-appearance\" content=\"" + System.Text.Encodings.Web.HtmlEncoder.Default.Encode(json) + "\">";
+            var theme = appearance.Theme == "Dark" ? "dark" : "light";
+            var rgb = string.Join(", ", Enumerable.Range(0, 3).Select(index => Convert.ToInt32(appearance.AccentFillColor.Substring(index * 2 + 1, 2), 16)));
+            var styles = $"--cx-accent:{appearance.AccentColor};--cx-accent-fill:{appearance.AccentFillColor};--cx-accent-text:{appearance.AccentTextColor};--cx-accent-rgb:{rgb};color-scheme:{theme}";
+            html = html.Replace("<!--cx-appearance-->", metadata)
+                .Replace("data-desktop-appearance=\"pending\"", $"data-theme=\"{theme}\" style=\"{styles}\"");
+        }
+        return Results.Content(html, "text/html; charset=utf-8", Encoding.UTF8);
     }
 
     private static async Task HandleHostSocketAsync(HttpContext context, AudioHub hub,

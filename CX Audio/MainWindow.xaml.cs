@@ -32,12 +32,13 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherQueueTimer? _noticeTimer;
     private readonly CancellationTokenSource _lifetimeCts = new();
 
-    private readonly SolidColorBrush _acidBrush = new(Color.FromArgb(255, 216, 255, 101));
+    private readonly SolidColorBrush _acidBrush = new();
+    private readonly SolidColorBrush _accentPillBrush = new();
     private readonly SolidColorBrush _warningBrush = new(Color.FromArgb(255, 255, 193, 102));
     private readonly SolidColorBrush _dangerBrush = new(Color.FromArgb(255, 255, 116, 108));
-    private readonly SolidColorBrush _mutedBrush = new(Color.FromArgb(255, 114, 123, 111));
-    private readonly SolidColorBrush _meterBrush = new(Color.FromArgb(230, 216, 255, 101));
-    private readonly SolidColorBrush _meterDimBrush = new(Color.FromArgb(55, 216, 255, 101));
+    private readonly SolidColorBrush _mutedBrush = new(Color.FromArgb(255, 128, 128, 128));
+    private readonly SolidColorBrush _meterBrush = new();
+    private readonly SolidColorBrush _meterDimBrush = new();
     private readonly SolidColorBrush _baselineBrush = new(Color.FromArgb(40, 255, 255, 255));
 
     private bool _updating;
@@ -371,6 +372,7 @@ public sealed partial class MainWindow : Window
                 _adapterItems.Add(viewModel);
             }
 
+            viewModel.SetAccent(_acidBrush.Color);
             viewModel.Update(adapter, snapshot.SelectedIds.Contains(adapter.Id));
         }
 
@@ -429,6 +431,7 @@ public sealed partial class MainWindow : Window
                 _receiverItems.Add(viewModel);
             }
 
+            viewModel.SetAccent(_acidBrush.Color);
             viewModel.Update(snapshot);
         }
 
@@ -980,7 +983,7 @@ public sealed partial class MainWindow : Window
         ServicePillText.Text = text;
         ServiceDot.Fill = online ? _acidBrush : _warningBrush;
         ServicePill.Background = online
-            ? new SolidColorBrush(Color.FromArgb(35, 0, 150, 136))
+            ? _accentPillBrush
             : new SolidColorBrush(Color.FromArgb(20, 255, 193, 102));
     }
 
@@ -1270,6 +1273,8 @@ public sealed partial class MainWindow : Window
     {
         if (_closed) return;
         _closed = true;
+        _appearanceSettings.ColorValuesChanged -= AppearanceSettings_ColorValuesChanged;
+        RootGrid.ActualThemeChanged -= AppearanceThemeChanged;
         _lifetimeCts.Cancel();
         _refreshTimer.Stop();
         _noticeTimer?.Stop();

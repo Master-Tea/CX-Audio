@@ -92,7 +92,7 @@ Release 提供 Windows x64 ZIP、已签名 MSIX、安装脚本和 SHA256 校验�
 
 1. 从 [发布](https://github.com/Master-Tea/CX-Audio/releases/latest) 下载并解压 `CXAudioOutput-win-x64.zip`。
 2. 双击 `CXAudioOutput.exe`（或 `Start CX Audio.cmd`）。
-3. 原生控制台会自动启动服务（默认端口 `5240`）。
+3. 原生控制台会自动启动服务（默认端口 `5240`）。需要更换端口时，打开“设置”中的“音频服务端口”，输入 `1–65535` 的整数并保存，再点击“重启应用以生效”；也可以使用 `--port` 参数覆盖保存值。
 4. 在“网络接口”中勾选一块或多块要使用的网卡。
 5. 让手机 / 平板 / 另一台电脑连接同一个 Wi-Fi 或局域网；Android 也可以改用 USB 数据线（见下文“Android 有线连接”）。
 6. 扫描控制台二维码，或在接收设备上打开链接并输入访问码。
@@ -114,14 +114,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 输出文件：
 
-- `dist\msix\CXAudioOutput_1.3.2.0_x64.msix`
+- `dist\msix\CXAudioOutput_1.3.3.0_x64.msix`
 - `dist\msix\MasterTea-CXAudio.cer`
 
 安装前先信任本次构建使用的自签名证书，再安装 MSIX：
 
 ```powershell
 Import-Certificate .\MasterTea-CXAudio.cer -CertStoreLocation Cert:\CurrentUser\Root
-Add-AppxPackage .\CXAudioOutput_1.3.2.0_x64.msix
+Add-AppxPackage .\CXAudioOutput_1.3.3.0_x64.msix
 ```
 
 安装包信息：
@@ -129,7 +129,7 @@ Add-AppxPackage .\CXAudioOutput_1.3.2.0_x64.msix
 ```text
 Publisher : MasterTea
 Identity  : MasterTea.CXAudio
-Version   : 1.3.2.0
+Version   : 1.3.3.0
 Arch      : x64
 Signature : SHA256 self-signed certificate
 ```
@@ -329,7 +329,7 @@ CXAudioOutput.exe [--port 5240] [--demo]
 
 ## 从源码构建
 
-需要 **.NET 8 SDK**。WinUI 依赖 Windows App SDK，NuGet 会在首次构建时自动还原。
+需要 Windows、**.NET 8 SDK** 和 Windows SDK。WinUI / Windows App SDK 依赖由 NuGet 还原。
 
 ```powershell
 dotnet publish '.\CX Audio\CX Audio.csproj' `
@@ -337,35 +337,38 @@ dotnet publish '.\CX Audio\CX Audio.csproj' `
   -o .\dist\CXAudioOutput-win-x64
 ```
 
-或者：
+发布目录包含 .NET 与 Windows App SDK 运行时。仓库已包含构建好的本地网页资源，普通 .NET 构建无需安装 Node.js。
+
+### 网页界面与桌面外观同步
+
+网页使用官方 **Fluent UI Web Components 3.2.1**，按钮、开关与设计令牌在本地打包，不依赖 CDN。控制台和接收页采用与原生 WinUI 3 一致的字体、留白、中性色表面和强调色。
+
+- HTML 首屏包含电脑当前的实际明暗模式和强调色，避免等待连接后才切换配色。
+- `/api/appearance` 提供只读外观快照；`/api/appearance/events` 通过 SSE 推送更改。网页恢复前台或重新联网后会重新同步。
+- 电脑选择“跟随系统”时，网页接收电脑解析后的颜色，而非接收设备自己的系统颜色。
+- 主题变化同时更新控件和音频可视化，不重建音频连接；无线与 Android USB 接收页共用同一套界面。
+
+修改 `web/src` 后，用 Node.js 22 或更新版本重新生成本地资源：
 
 ```powershell
-.\scripts\build.ps1
+cd web
+npm ci
+npm run build
 ```
 
-发布目录约 200 MB（包含 .NET 运行时和 Windows App SDK 运行时），压缩后约 80–100 MB。
+`web/package-lock.json` 固定依赖版本；产物及第三方许可证写入 `CX Audio/wwwroot/assets`。构建器复用 `CX Audio/Assets` 中的透明原生图标。
+
+回归验证：先将 Debug 应用发布到 `diagnostic-build`，再在 `web` 目录运行 `npm test`。首次运行需 `npx playwright install chromium --only-shell`。浏览器测试覆盖实际 WinUI 外观更改、SSE 重连、二维码解码、Fluent 按钮/开关、移动布局及演示音频传输。原生 UI 回归入口为 `scripts/run_ui_smoke.py`。
 
 ### 打包 MSIX
 
-MSIX 使用 `winapp`（Windows App SDK CLI）和 Python + Pillow 生成图标、打包并签名：
-
 ```powershell
-.\scripts\build-msix.ps1 -PythonPath C:\Python311\python.exe
+.\scripts\build-msix.ps1
 ```
 
-脚本会：
+脚本启用项目 MSIX 工具链，生成自包含 x64 包，并使用 Windows SDK 的 `signtool` 签名。脚本默认按既有 thumbprint 从当前用户证书库读取原证书；找不到原证书或私钥时会直接停止，绝不会生成新的签名证书。也可以通过 `-CertificatePath` 和 `-CertificatePassword` 指向原始 PFX，脚本会校验 thumbprint 和清单发布者后再签名。
 
-1. 调用 `build.ps1` 生成 self-contained 发布目录。
-2. 运行 `scripts\make-msix-assets.py`，从 `design/icon-source.png` 生成：
-   - `Square44x44Logo` 的 16/20/24/30/32/36/40/48/60/64/72/80/96/256 目标尺寸；
-   - 100/125/150/200/400 缩放变体；
-   - 透明安全区留白，保持 1:1 比例，不拉伸、不裁切。
-3. 复制 `packaging/msix/AppxManifest.xml` 和 `Assets`，调用 `winapp package`。
-4. 使用 `packaging/msix/signing/MasterTea-CXAudioOutput.pfx` 签名，并添加 DigiCert RFC3161 时间戳。
-5. 用 `signtool verify /pa` 校验。
-
-输出：`dist\CXAudioOutput_1.3.2.0_x64.msix`。  
-图标预览：`packaging\msix\icon-preview-msix.png`。
+输出：`dist\msix\CXAudioOutput_1.3.3.0_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
 
 ## 故障排查
 

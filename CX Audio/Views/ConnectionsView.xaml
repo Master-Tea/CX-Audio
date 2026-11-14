@@ -96,7 +96,7 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                         <TextBlock Text="允许多选" Style="{StaticResource CaptionStyle}" VerticalAlignment="Center"/>
-                        <ToggleSwitch x:Name="MultiSelectSwitch" IsOn="True" MinWidth="0" AutomationProperties.Name="允许多选网卡" Toggled="MultiSelect_Toggled" x:FieldModifier="internal"/>
+                        <ToggleSwitch OnContent="开" OffContent="关" x:Name="MultiSelectSwitch" IsOn="True" MinWidth="0" AutomationProperties.Name="允许多选网卡" Toggled="MultiSelect_Toggled" x:FieldModifier="internal"/>
                     </StackPanel>
                 </Grid>
                 <Grid Grid.Row="1" ColumnSpacing="10">
@@ -144,7 +144,7 @@
                                             <Border Background="#12FFFFFF" CornerRadius="8" Padding="5,2" Visibility="{x:Bind VirtualVisibility, Mode=OneWay}" VerticalAlignment="Center">
                                                 <TextBlock Text="虚拟" FontSize="8" Foreground="{ThemeResource TextMutedBrush}"/>
                                             </Border>
-                                            <Border Background="#1AD8FF65" CornerRadius="8" Padding="5,2" Visibility="{x:Bind UsbTetherVisibility, Mode=OneWay}" VerticalAlignment="Center">
+                                            <Border Background="{ThemeResource AcidSoftBrush}" CornerRadius="8" Padding="5,2" Visibility="{x:Bind UsbTetherVisibility, Mode=OneWay}" VerticalAlignment="Center">
                                                 <TextBlock Text="USB" FontSize="8" Foreground="{ThemeResource AcidBrush}"/>
                                             </Border>
                                         </StackPanel>

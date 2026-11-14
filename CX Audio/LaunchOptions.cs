@@ -8,7 +8,7 @@ public sealed record LaunchOptions(int Port, bool Demo)
 
     public static LaunchOptions Parse(string[] args)
     {
-        var port = DefaultPort;
+        var port = new AppSettingsStore().Load().Port;
         var demo = false;
 
         var envPort = Environment.GetEnvironmentVariable("CXAUDIO_PORT");

@@ -4,7 +4,6 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.UI;
-using Windows.UI.ViewManagement;
 
 namespace CXAudioOutput;
 
@@ -18,8 +17,6 @@ public sealed partial class MainWindow
     private readonly TextBlock _overviewAndroid = new() { TextWrapping = TextWrapping.Wrap };
     private Button? _startServiceButton;
     private Button? _firewallButton;
-    private ToggleSwitch? _accentSystemSwitch;
-    private ColorPicker? _accentColorPicker;
     private ToggleSwitch? _micaSystemSwitch;
     private Slider? _micaOpacitySlider;
     private TextBlock? _micaOpacityText;
@@ -45,6 +42,12 @@ public sealed partial class MainWindow
         ApplyTheme(settings.Theme);
         ApplyAccent(settings.AccentColor);
         ApplyMicaOpacity(_micaOpacitySetting);
+        if (Navigation.SettingsItem is NavigationViewItem settingsItem)
+        {
+            settingsItem.Content = "设置";
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(settingsItem, "设置");
+            ToolTipService.SetToolTip(settingsItem, "设置");
+        }
 
         _overviewContent.Children.Add(new TextBlock { Text = "服务状态", FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         _overviewContent.Children.Add(_overviewService);
@@ -68,12 +71,13 @@ public sealed partial class MainWindow
         _overviewContent.Children.Add(actions);
 
         _settingsInitializing = true;
-        var autoStart = new ToggleSwitch { Header = "启动时自动启动音频服务", IsOn = settings.AutoStartService };
+        var autoStart = new ToggleSwitch { Header = "启动时自动启动音频服务", OnContent = "开", OffContent = "关", IsOn = settings.AutoStartService };
         autoStart.Toggled += (_, _) =>
         {
             if (!_settingsInitializing) SaveSettings(value => value.AutoStartService = autoStart.IsOn);
         };
         _settingsContent.Children.Add(autoStart);
+        InitializePortSettings(settings);
 
         var openBrowser = new Button
         {
@@ -97,27 +101,12 @@ public sealed partial class MainWindow
         };
         _settingsContent.Children.Add(theme);
 
-        _accentSystemSwitch = new ToggleSwitch
-        {
-            Header = "主题色跟随系统",
-            IsOn = string.IsNullOrWhiteSpace(settings.AccentColor) || string.Equals(settings.AccentColor, "System", StringComparison.OrdinalIgnoreCase)
-        };
-        _accentSystemSwitch.Toggled += AccentSystem_Toggled;
-        _settingsContent.Children.Add(_accentSystemSwitch);
-        _settingsContent.Children.Add(new TextBlock { Text = "自定义主题色", Style = (Style)Application.Current.Resources["CaptionStyle"] });
-        _accentColorPicker = new ColorPicker
-        {
-            IsEnabled = !_accentSystemSwitch.IsOn,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            MinWidth = 280,
-            Color = TryParseColor(settings.AccentColor, out var savedAccent) ? savedAccent : GetSystemAccent()
-        };
-        _accentColorPicker.ColorChanged += AccentColor_Changed;
-        _settingsContent.Children.Add(_accentColorPicker);
+        InitializeAccentSettings(settings);
 
         _micaSystemSwitch = new ToggleSwitch
         {
             Header = "云母透明度跟随系统",
+            OnContent = "开", OffContent = "关",
             IsOn = string.Equals(_micaOpacitySetting, "System", StringComparison.OrdinalIgnoreCase)
         };
         _micaSystemSwitch.Toggled += MicaSystem_Toggled;
@@ -146,7 +135,7 @@ public sealed partial class MainWindow
         _settingsContent.Children.Add(_firewallButton);
         _settingsContent.Children.Add(new TextBlock { Text = "高级功能只在你主动点击时请求 Windows 管理员权限。普通启动不会弹出 UAC。", Style = (Style)Application.Current.Resources["CaptionStyle"], TextWrapping = TextWrapping.Wrap });
         _settingsContent.Children.Add(new TextBlock { Text = "关于", FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 0) });
-        _settingsContent.Children.Add(new TextBlock { Text = "CX Audio · 1.3.0", TextWrapping = TextWrapping.Wrap });
+        _settingsContent.Children.Add(new TextBlock { Text = "CX Audio · " + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? "1.3"), TextWrapping = TextWrapping.Wrap });
         _settingsInitializing = false;
 
         UpdateOverview();
@@ -194,23 +183,6 @@ public sealed partial class MainWindow
         }
     }
 
-    private void AccentSystem_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_settingsInitializing || _accentSystemSwitch is null || _accentColorPicker is null) return;
-        _accentColorPicker.IsEnabled = !_accentSystemSwitch.IsOn;
-        var selected = _accentSystemSwitch.IsOn ? "System" : ToColorHex(_accentColorPicker.Color);
-        ApplyAccent(selected);
-        SaveSettings(value => value.AccentColor = selected);
-    }
-
-    private void AccentColor_Changed(ColorPicker sender, ColorChangedEventArgs args)
-    {
-        if (_settingsInitializing || _accentSystemSwitch?.IsOn == true) return;
-        var selected = ToColorHex(args.NewColor);
-        ApplyAccent(selected);
-        SaveSettings(value => value.AccentColor = selected);
-    }
-
     private void MicaSystem_Toggled(object sender, RoutedEventArgs e)
     {
         if (_settingsInitializing || _micaSystemSwitch is null || _micaOpacitySlider is null) return;
@@ -239,24 +211,7 @@ public sealed partial class MainWindow
             _ => ElementTheme.Default
         };
         ApplyMicaOpacity(_micaOpacitySetting);
-    }
-
-    private void ApplyAccent(string? value)
-    {
-        var accent = TryParseColor(value, out var custom) ? custom : GetSystemAccent();
-        var lightDictionary = Application.Current.Resources.ThemeDictionaries["Light"] as ResourceDictionary;
-        var darkDictionary = Application.Current.Resources.ThemeDictionaries["Dark"] as ResourceDictionary;
-        if (lightDictionary is not null)
-        {
-            lightDictionary["AcidBrush"] = new SolidColorBrush(accent);
-            lightDictionary["AcidSoftBrush"] = new SolidColorBrush(Color.FromArgb(26, accent.R, accent.G, accent.B));
-        }
-        if (darkDictionary is not null)
-        {
-            darkDictionary["AcidBrush"] = new SolidColorBrush(accent);
-            darkDictionary["AcidSoftBrush"] = new SolidColorBrush(Color.FromArgb(38, accent.R, accent.G, accent.B));
-        }
-        Application.Current.Resources["SystemAccentColor"] = accent;
+        ApplyAccent(_accentSetting);
     }
 
     private void ApplyMicaOpacity(string? value)
@@ -290,18 +245,6 @@ public sealed partial class MainWindow
         return TryParseMicaOpacity(value, out var opacity)
             ? $"当前云母遮罩：{Math.Round(opacity * 100):0}%"
             : "当前云母遮罩：跟随系统";
-    }
-
-    private static Color GetSystemAccent()
-    {
-        try
-        {
-            return new UISettings().GetColorValue(UIColorType.Accent);
-        }
-        catch
-        {
-            return Color.FromArgb(255, 0, 133, 122);
-        }
     }
 
     private static bool TryParseColor(string? value, out Color color)

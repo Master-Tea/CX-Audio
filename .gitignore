@@ -23,6 +23,8 @@ msix-unpack/
 # Local test data and logs
 ui-smoke-logs/
 ui-smoke-data/
+web/node_modules/
+web/test-results/
 
 # Local signing material
 *.pfx

@@ -29,6 +29,52 @@ public sealed class AppState
     private string _profile = "balanced";
     private CaptureInfo _capture = CaptureInfo.Initial;
     private double _peak;
+    private AppearanceSnapshot? _appearance;
+    private event Action<AppearanceSnapshot>? AppearanceChanged;
+
+    public AppearanceSnapshot? Appearance
+    {
+        get { lock (_sync) return _appearance; }
+    }
+
+    public void SetAppearance(AppearanceSnapshot appearance)
+    {
+        Action<AppearanceSnapshot>? changed;
+        lock (_sync)
+        {
+            if (_appearance == appearance) return;
+            _appearance = appearance;
+            changed = AppearanceChanged;
+        }
+        changed?.Invoke(appearance);
+    }
+
+    public async IAsyncEnumerable<AppearanceSnapshot> WatchAppearance(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var channel = System.Threading.Channels.Channel.CreateBounded<AppearanceSnapshot>(
+            new System.Threading.Channels.BoundedChannelOptions(1)
+            {
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest,
+                SingleReader = true, SingleWriter = false
+            });
+        void OnChanged(AppearanceSnapshot appearance) => channel.Writer.TryWrite(appearance);
+        lock (_sync)
+        {
+            AppearanceChanged += OnChanged;
+            if (_appearance is not null) channel.Writer.TryWrite(_appearance);
+        }
+        try
+        {
+            await foreach (var appearance in channel.Reader.ReadAllAsync(cancellationToken))
+                yield return appearance;
+        }
+        finally
+        {
+            lock (_sync) AppearanceChanged -= OnChanged;
+            channel.Writer.TryComplete();
+        }
+    }
 
     public AppState(LaunchOptions options)
     {
@@ -74,7 +120,8 @@ public sealed class AppState
         get { lock (_sync) return _peak; }
     }
 
-    public string VersionString => "1.3.0";
+    public string VersionString => typeof(AppState).Assembly.GetName().Version is { } version
+        ? $"{version.Major}.{version.Minor}.{version.Build}" : string.Empty;
 
     public static int TargetMilliseconds(string profile) => profile switch
     {
@@ -189,6 +236,14 @@ public sealed class AppState
         return name[..32];
     }
 }
+
+public sealed record AppearanceSnapshot(
+    string Theme,
+    string ThemeMode,
+    string AccentColor,
+    string AccentFillColor,
+    string AccentTextColor,
+    string AccentSource);
 
 public sealed record StateSnapshot(
     string AccessCode,
