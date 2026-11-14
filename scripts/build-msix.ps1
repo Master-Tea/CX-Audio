@@ -2,7 +2,7 @@
 param(
     [string]$Configuration = 'Release',
     [string]$Platform = 'x64',
-    [string]$Version = '1.3.0.0',
+    [string]$Version = '1.3.1.0',
     [string]$CertificatePath = '',
     [string]$CertificatePassword = 'CXAudio-MSIX-Local'
 )

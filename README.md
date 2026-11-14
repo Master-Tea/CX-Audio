@@ -114,14 +114,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 输出文件：
 
-- `dist\msix\CXAudioOutput_1.3.0.0_x64.msix`
+- `dist\msix\CXAudioOutput_1.3.1.0_x64.msix`
 - `dist\msix\MasterTea-CXAudio.cer`
 
 安装前先信任本次构建使用的自签名证书，再安装 MSIX：
 
 ```powershell
 Import-Certificate .\MasterTea-CXAudio.cer -CertStoreLocation Cert:\CurrentUser\TrustedPeople
-Add-AppxPackage .\CXAudioOutput_1.3.0.0_x64.msix
+Add-AppxPackage .\CXAudioOutput_1.3.1.0_x64.msix
 ```
 
 安装包信息：
@@ -129,7 +129,7 @@ Add-AppxPackage .\CXAudioOutput_1.3.0.0_x64.msix
 ```text
 Publisher : MasterTea
 Identity  : MasterTea.CXAudio
-Version   : 1.3.0.0
+Version   : 1.3.1.0
 Arch      : x64
 Signature : SHA256 self-signed certificate
 ```
@@ -364,7 +364,7 @@ MSIX 使用 `winapp`（Windows App SDK CLI）和 Python + Pillow 生成图标、
 4. 使用 `packaging/msix/signing/MasterTea-CXAudioOutput.pfx` 签名，并添加 DigiCert RFC3161 时间戳。
 5. 用 `signtool verify /pa` 校验。
 
-输出：`dist\CXAudioOutput_1.3.0.0_x64.msix`。  
+输出：`dist\CXAudioOutput_1.3.1.0_x64.msix`。  
 图标预览：`packaging\msix\icon-preview-msix.png`。
 
 ## 故障排查
