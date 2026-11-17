@@ -9,6 +9,7 @@ internal sealed class AudioRouteJournal
     public Dictionary<ERole, string> OriginalDefaults { get; set; } = new();
     public List<string> DisabledEndpointIds { get; set; } = new();
     public List<string> PreviouslyDisabledEndpointIds { get; set; } = new();
+    public Dictionary<string, bool> OriginalMuteStates { get; set; } = new();
 }
 
 // This class owns the transaction, independently of the UI and capture lifetime.
@@ -70,24 +71,25 @@ internal sealed class AudioRouteController
     {
         if (!IsAdvanced || _journal is null) return;
         var outputs = _platform.GetOutputs();
-        // Disable every other render endpoint, including virtual mixers which
-        // could forward audio to hardware. Previously disabled devices stay disabled.
+        // Mute through the Windows Audio service before changing defaults. Endpoint
+        // visibility is policy scoped and can report a hidden device in this process
+        // while existing streams elsewhere continue playing. Never use visibility as
+        // proof of silence. Previously disabled devices are not enabled or modified.
         foreach (var output in outputs.Where(output => output.IsActive && output.Id != _journal.VirtualEndpointId))
         {
-            if (!_journal.DisabledEndpointIds.Contains(output.Id, StringComparer.OrdinalIgnoreCase)
-                && !_journal.PreviouslyDisabledEndpointIds.Contains(output.Id, StringComparer.OrdinalIgnoreCase))
+            if (!_journal.OriginalMuteStates.ContainsKey(output.Id))
             {
-                _journal.DisabledEndpointIds.Add(output.Id);
+                _journal.OriginalMuteStates.Add(output.Id, _platform.GetMuted(output.Id));
                 Save();
             }
-            _platform.SetEnabled(output.Id, false);
+            _platform.SetMuted(output.Id, true);
         }
 
         outputs = _platform.GetOutputs();
-        if (outputs.Any(output => output.IsActive && output.Id != _journal.VirtualEndpointId))
-            throw new InvalidOperationException("Windows 未能禁用所有其他播放设备，输出隔离尚未完成。请恢复普通模式后重试。");
+        if (outputs.Any(output => output.IsActive && output.Id != _journal.VirtualEndpointId && !_platform.GetMuted(output.Id)))
+            throw new InvalidOperationException("Windows 未能静音所有其他播放设备，本地静音保护尚未完成。请恢复普通模式后重试。");
         if (!outputs.Any(output => output.Id == _journal.VirtualEndpointId && output.IsActive))
-            throw new InvalidOperationException("虚拟扬声器已断开或被禁用。物理输出保持禁用；请恢复普通模式或重新连接虚拟设备。");
+            throw new InvalidOperationException("虚拟扬声器已断开或被禁用。其他输出保持静音；请恢复普通模式或重新连接虚拟设备。");
 
         foreach (var role in Enum.GetValues<ERole>())
         {
@@ -106,7 +108,7 @@ internal sealed class AudioRouteController
             ?? throw new InvalidOperationException("无法读取音频恢复记录，请保留记录并重试。");
         if (_journal.Version != 1 || string.IsNullOrWhiteSpace(_journal.VirtualEndpointId)
             || _journal.DisabledEndpointIds is null || _journal.PreviouslyDisabledEndpointIds is null
-            || _journal.OriginalDefaults is null)
+            || _journal.OriginalDefaults is null || _journal.OriginalMuteStates is null)
             throw new InvalidOperationException("音频恢复记录格式不受支持，请保留记录并重试。");
 
         var errors = new List<Exception>();
@@ -121,6 +123,22 @@ internal sealed class AudioRouteController
                 if (restored is null || (restored.State & 2) != 0)
                     throw new InvalidOperationException("设备暂不可恢复，请接回设备后重试：" + id);
                 _journal.DisabledEndpointIds.Remove(id);
+                Save();
+            }
+            catch (Exception ex) { errors.Add(ex); }
+        }
+
+        foreach (var pair in _journal.OriginalMuteStates.ToArray())
+        {
+            try
+            {
+                var output = _platform.GetOutputs().SingleOrDefault(output => output.Id == pair.Key);
+                if (output is not { IsActive: true })
+                    throw new InvalidOperationException("原播放设备暂不可用，请接回后恢复静音状态：" + pair.Key);
+                _platform.SetMuted(pair.Key, pair.Value);
+                if (_platform.GetMuted(pair.Key) != pair.Value)
+                    throw new InvalidOperationException("Windows 尚未恢复原静音状态。");
+                _journal.OriginalMuteStates.Remove(pair.Key);
                 Save();
             }
             catch (Exception ex) { errors.Add(ex); }

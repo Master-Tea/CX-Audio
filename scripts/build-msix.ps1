@@ -2,7 +2,7 @@
 param(
     [string]$Configuration = 'Release',
     [string]$Platform = 'x64',
-    [string]$Version = '1.4.1.1',
+    [string]$Version = '1.4.2.2',
     [string]$CertificateThumbprint = '4C800525ACB48750E0B613F0A1EA4AD3D719A476',
     [string]$CertificatePath = '',
     [string]$CertificatePassword = ''

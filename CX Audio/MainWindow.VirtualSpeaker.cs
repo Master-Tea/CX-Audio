@@ -30,7 +30,7 @@ public sealed partial class MainWindow
         });
         var modes = new StackPanel { Spacing = 12 };
         modes.Children.Add(ModeDescription("普通模式", "电脑扬声器 / 耳机与网络扬声器可同时发声。系统音频从 Windows 默认输出设备采集。"));
-        modes.Children.Add(ModeDescription("虚拟扬声器（高级）", "系统声音送入 VB-CABLE 虚拟扬声器，并禁用其余 Windows 播放端点。仅网络接收设备播放；暂停串流或接收设备断开时，电脑仍保持无声。"));
+        modes.Children.Add(ModeDescription("虚拟扬声器（高级）", "系统声音送入 CX Audio 虚拟扬声器（由 VB-CABLE 驱动），同时静音并持续保护其他 Windows 播放端点。网络接收设备继续播放；暂停串流或接收设备断开时，本地静音保持有效。"));
         _virtualSpeakerContent.Children.Add(modes);
         _virtualSpeakerContent.Children.Add(_virtualDeviceText);
         _virtualSpeakerContent.Children.Add(_virtualInfoBar);
@@ -51,7 +51,7 @@ public sealed partial class MainWindow
         _virtualSpeakerContent.Children.Add(_virtualNormalButton);
         _virtualSpeakerContent.Children.Add(new TextBlock
         {
-            Text = "首次使用：安装驱动 → 按安装器提示重启电脑 → 启用高级模式。驱动安装由 VB-Audio 官方安装器在 Windows 中注册真实音频设备。",
+            Text = "首次使用：安装驱动 → 按安装器提示重启电脑 → 启用高级模式。应用将虚拟播放端点命名为 CX Audio，驱动仍由 VB-Audio 提供。仅安装驱动需要管理员权限。",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0)
         });
         _virtualSpeakerContent.Children.Add(_virtualInstallButton);
@@ -61,13 +61,13 @@ public sealed partial class MainWindow
         _virtualSpeakerContent.Children.Add(website);
         _virtualSpeakerContent.Children.Add(new TextBlock
         {
-            Text = "VB-CABLE 是 VB-Audio 的第三方 Donationware 驱动，按其许可使用。安装时从官网下载并验证数字签名。切回普通模式或退出应用会恢复此前启用的设备及默认输出；异常退出由守护进程恢复，未完成的恢复会在下次启动时重试。",
+            Text = "VB-CABLE 是 VB-Audio 的第三方 Donationware 驱动，按其许可使用。安装时从官网下载并验证数字签名。切回普通模式或退出应用会恢复此前的静音状态及默认输出；异常退出由守护进程恢复，未完成的恢复会在下次启动时重试。",
             TextWrapping = TextWrapping.Wrap,
             Style = (Style)Application.Current.Resources["CaptionStyle"]
         });
         _virtualSpeakerContent.Children.Add(new TextBlock
         {
-            Text = "高级模式会持续检查新接入或被重新启用的播放设备并再次禁用。设备热插拔到检查生效之间可能存在短暂窗口；如需严格的硬件级零发声保证，请同时断开物理扬声器。",
+            Text = "高级模式会持续检查其他播放设备并重新应用静音。新设备接入或其他程序取消静音到保护生效之间存在短暂窗口；独占模式和绕过 Windows 音频引擎的驱动可能不受软件静音控制。需要硬件级无声时请关闭物理扬声器。",
             TextWrapping = TextWrapping.Wrap,
             Style = (Style)Application.Current.Resources["CaptionStyle"]
         });
@@ -88,7 +88,7 @@ public sealed partial class MainWindow
         var busy = _virtualActionBusy || _virtualInstallBusy || state?.Busy == true;
         var ready = _serverStarted && _server is not null;
         _virtualModeText.Text = state?.Advanced == true
-            ? state.Protected ? "当前模式：虚拟扬声器 · 输出隔离已验证" : "当前模式：虚拟扬声器 · 需要检查"
+            ? state.Protected ? "当前模式：虚拟扬声器 · 本地静音保护已验证" : "当前模式：虚拟扬声器 · 需要检查"
             : state?.RecoveryPending == true ? "当前模式：设备恢复待完成" : "当前模式：普通模式";
         _virtualDeviceText.Text = !ready ? "启动音频服务后可检查和切换音频模式。"
             : state?.Installed == true ? "虚拟播放设备：" + state.DeviceName
@@ -99,7 +99,7 @@ public sealed partial class MainWindow
         _virtualRefreshButton.IsEnabled = ready && !busy;
         _virtualInfoBar.IsOpen = _options.Demo || !string.IsNullOrEmpty(state?.Error) || state?.Advanced == true;
         _virtualInfoBar.Severity = !string.IsNullOrEmpty(state?.Error) ? InfoBarSeverity.Error : InfoBarSeverity.Informational;
-        _virtualInfoBar.Title = _options.Demo ? "演示模式" : state?.Error is not null ? "音频路由需要检查" : "电脑本地输出已禁用";
+        _virtualInfoBar.Title = _options.Demo ? "演示模式" : state?.Error is not null ? "音频路由需要检查" : "电脑本地输出已静音";
         _virtualInfoBar.Message = _options.Demo ? "请正常启动应用后使用高级模式。"
             : state?.Error ?? "电脑声音仅送入虚拟端点。要恢复本地声音，请点击恢复普通模式。";
     }

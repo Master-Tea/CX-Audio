@@ -1,6 +1,6 @@
 # Third-party notices
 
-CX Audio Output includes the following third-party components and assets.
+CX Audio includes the following third-party components and assets.
 
 ## VB-CABLE (optional external driver)
 

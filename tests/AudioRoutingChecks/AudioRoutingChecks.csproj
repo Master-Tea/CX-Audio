@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="..\..\CX Audio\AudioRouteController.cs" Link="AudioRouteController.cs" />
     <Compile Include="..\..\CX Audio\AudioRoutePlatform.cs" Link="AudioRoutePlatform.cs" />
+    <Compile Include="..\..\CX Audio\AudioEndpointVolume.cs" Link="AudioEndpointVolume.cs" />
     <Compile Include="..\..\CX Audio\WasapiInterop.cs" Link="WasapiInterop.cs" />
     <Compile Include="..\..\CX Audio\WasapiLoopbackSession.cs" Link="WasapiLoopbackSession.cs" />
     <Compile Include="..\..\CX Audio\AudioLatency.cs" Link="AudioLatency.cs" />

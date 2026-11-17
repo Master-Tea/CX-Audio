@@ -46,6 +46,14 @@ public sealed class VirtualSpeakerService : IHostedService, IDisposable
         if (_options.Demo) throw new InvalidOperationException("演示信号模式不能启用系统音频隔离，请正常启动应用。");
         var target = _controller!.GetOutputs().FirstOrDefault(output => output.IsVirtualSpeaker && output.IsActive)
             ?? throw new InvalidOperationException("请先安装并启用 VB-CABLE 虚拟音频驱动，再刷新设备。");
+        // Rename only the verified VB-CABLE endpoint; never alter driver metadata.
+        if (!string.Equals(target.Name, "CX Audio", StringComparison.Ordinal))
+        {
+            var platform = new WindowsAudioRoutePlatform();
+            platform.SetDisplayName(target.Id, "CX Audio");
+            if (platform.GetOutputs().Single(output => output.Id == target.Id).Name != "CX Audio")
+                throw new InvalidOperationException("Windows 尚未更新虚拟设备名称，请刷新设备后重试。");
+        }
         EnsureGuard();
         ChangeRoute(() => _controller.Enable(target.Id));
     });

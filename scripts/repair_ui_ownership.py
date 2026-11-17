@@ -80,7 +80,7 @@ ET.indent(window, space='    ')
 path.write_text(ET.tostring(window, encoding='unicode')+'\n', encoding='utf-8')
 for handler in handler_names:
     cs = re.sub(r'\bprivate(\s+(?:async\s+)?void\s+'+re.escape(handler)+r'\()', r'internal\1', cs)
-cs = cs.replace('        Title = "CX Audio Output";', '        InitializeOwnedViews();\n        Title = "CX Audio Output";', 1)
+cs = cs.replace('        Title = "CX Audio";', '        InitializeOwnedViews();\n        Title = "CX Audio";', 1)
 cs_path.write_text(cs, encoding='utf-8')
 
 fields = '''using Microsoft.UI.Xaml.Controls;

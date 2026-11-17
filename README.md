@@ -84,11 +84,11 @@ Release 提供 Windows x64 ZIP、已签名 MSIX、安装脚本和 SHA256 校验�
 
 首次使用时，在高级页面点击“安装虚拟扬声器驱动”。应用从 [VB-Audio 官网](https://vb-audio.com/Cable/) 下载 `VBCABLE_Driver_Pack43.zip`，核对固定 SHA256，再通过 Windows 验证安装程序的 Authenticode 签名和 VB-Audio / Vincent Burel 发布者身份。Windows 会请求管理员权限；在官方安装器中点击 **Install Driver**，按提示重启电脑后刷新设备。驱动安装会在系统中注册真正的 `CABLE Input (VB-Audio Virtual Cable)` 播放设备。VB-CABLE 是第三方 Donationware，按其许可使用；CX Audio 的 ZIP / MSIX 不内嵌或重新分发其驱动。
 
-点击“启用高级模式”后，应用将默认、媒体、通信三类输出切换到虚拟扬声器，禁用其余所有当前活动的播放端点（包括可能转送声音的其他虚拟混音设备），并验证设备状态。采集固定到这个虚拟端点，不会在设备丢失时回退到物理扬声器。暂停串流、手机断开或虚拟设备丢失时，本地输出仍保持禁用；在高级页面点击“恢复普通模式”恢复本地声音。演示模式不允许安装驱动或启用系统音频隔离。
+点击“启用高级模式”后，应用将默认、媒体、通信三类输出切换到 CX Audio 虚拟扬声器（VB-CABLE），并通过 Windows Audio 服务静音其他活动的播放端点，保护已经在播放的普通共享音频流。采集固定到虚拟端点，不会在设备丢失时回退到物理扬声器。暂停串流、手机断开或虚拟设备丢失时，其他输出保持静音；点击“恢复普通模式”恢复原静音状态及默认输出。虚拟设备的 CX Audio 是端点显示名，驱动仍为 VB-Audio，不修改第三方驱动文件。演示模式不允许安装驱动或改变系统音频路由。
 
-设备状态会持续检查，新连接或被重新启用的其他播放设备会再次禁用。**这是 Windows 播放端点级隔离，不能承诺设备热插拔、其他管理员程序修改设备、内核驱动绕过 Windows 音频引擎等情况下的硬件级绝对零发声。** 新设备出现到检查禁用之间可能存在短暂窗口；需要这一等级保证时应断开或关闭物理扬声器。
+设备状态会持续检查，新连接或被取消静音的其他播放设备会重新静音。**这是 Windows 音频端点的静音保护，无法承诺独占音频、绕过 Windows 音频引擎的驱动、设备热插拔或其他程序取消静音时的硬件级绝对零发声。** 新设备或取消静音到保护生效之间存在短暂窗口；需要硬件级无声时应关闭物理扬声器。1.4.2 不再把进程内的设备可见性变化误当成系统已停止发声。
 
-每次修改设备前，应用将恢复记录写入数据目录的 `audio-route-recovery.json` 并刷新到磁盘。切回普通模式或退出时，恢复此前启用的设备及三类默认输出，原本禁用的设备继续保持禁用。独立守护进程在主进程异常退出后执行恢复；若电脑断电或设备暂时拔出，记录会保留，下一次启动音频服务时重试，也可接回原设备后点击“恢复普通模式”。高级模式不会在启动时自动启用。
+每次修改设备前，应用将恢复记录写入数据目录的 `audio-route-recovery.json` 并刷新到磁盘。切回普通模式或退出时，恢复此前的静音状态及三类默认输出，原本禁用的设备不主动启用；兼容恢复旧版本遗留的设备禁用记录。独立守护进程在主进程异常退出后执行恢复；若电脑断电或设备暂时拔出，记录会保留，下一次启动音频服务时重试，也可接回原设备后点击“恢复普通模式”。高级模式不会在启动时自动启用。
 
 开发验证：
 
@@ -150,14 +150,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 输出文件：
 
-- `dist\msix\CXAudioOutput_1.4.1.1_x64.msix`
+- `dist\msix\CXAudioOutput_1.4.2.2_x64.msix`
 - `dist\msix\MasterTea-CXAudio.cer`
 
 安装前先信任本次构建使用的自签名证书，再安装 MSIX：
 
 ```powershell
 Import-Certificate .\MasterTea-CXAudio.cer -CertStoreLocation Cert:\CurrentUser\Root
-Add-AppxPackage .\CXAudioOutput_1.4.1.1_x64.msix
+Add-AppxPackage .\CXAudioOutput_1.4.2.2_x64.msix
 ```
 
 安装包信息：
@@ -165,7 +165,7 @@ Add-AppxPackage .\CXAudioOutput_1.4.1.1_x64.msix
 ```text
 Publisher : MasterTea
 Identity  : MasterTea.CXAudio
-Version   : 1.4.1.1
+Version   : 1.4.2.2
 Arch      : x64
 Signature : SHA256 self-signed certificate
 ```
@@ -403,7 +403,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\build-release.ps1
 ```
 
-输出到 `dist\release\v1.4.1`：自包含 x64 ZIP、沿用原证书签名的 MSIX、公开证书、`Install-CXAudio.ps1`、发布说明和 `SHA256SUMS.txt`。驱动由用户首次使用高级模式时从 VB-Audio 官网另行安装。脚本会同步复制新生成的 XBF 与资源索引，避免发布目录残留旧侧边栏。
+输出到 `dist\release\v1.4.2`：自包含 x64 ZIP、沿用原证书签名的 MSIX、公开证书、`Install-CXAudio.ps1`、发布说明和 `SHA256SUMS.txt`。驱动由用户首次使用高级模式时从 VB-Audio 官网另行安装。脚本会同步复制新生成的 XBF 与资源索引，避免发布目录残留旧侧边栏。
 
 ### 打包 MSIX
 
@@ -413,7 +413,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 脚本启用项目 MSIX 工具链，生成自包含 x64 包，并使用 Windows SDK 的 `signtool` 签名。脚本默认按既有 thumbprint 从当前用户证书库读取原证书；找不到原证书或私钥时会直接停止，绝不会生成新的签名证书。也可以通过 `-CertificatePath` 和 `-CertificatePassword` 指向原始 PFX，脚本会校验 thumbprint 和清单发布者后再签名。
 
-输出：`dist\msix\CXAudioOutput_1.4.1.1_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
+输出：`dist\msix\CXAudioOutput_1.4.2.2_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
 
 ## 故障排查
 

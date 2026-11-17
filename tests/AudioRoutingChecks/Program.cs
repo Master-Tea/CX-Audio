@@ -8,7 +8,7 @@ if (args.Length == 1 && args[0] == "--guard-parent")
     return;
 }
 
-var testRoot = Path.Combine(Path.GetTempPath(), "CXAudioRoutingChecks-" + Guid.NewGuid().ToString("N"));
+var testRoot = Path.Combine(Environment.GetEnvironmentVariable("CX_AUDIO_TEST_ARTIFACTS") ?? Path.GetTempPath(), "CXAudioRoutingChecks-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(testRoot);
 var passed = 0;
 
@@ -21,7 +21,7 @@ Run("advanced mode isolates all other endpoints and restores all three roles", (
 {
     route.Enable("cable");
     Check(route.IsAdvanced && route.EndpointId == "cable", "Advanced endpoint wasn't pinned.");
-    Check(platform.GetOutputs().Where(output => output.IsActive).Single().Id == "cable", "Physical output remained active.");
+    Check(platform.GetOutputs().Where(output => output.IsActive && output.Id != "cable").All(output => platform.GetMuted(output.Id)), "Physical output remained active.");
     Check(platform.Defaults.Values.All(id => id == "cable"), "Not every role uses the virtual endpoint.");
     route.Recover();
     AssertOriginal(platform, route, journal);
@@ -30,21 +30,29 @@ Run("new and reenabled outputs are isolated and added to recovery", (platform, r
 {
     route.Enable("cable");
     platform.Outputs.Add(new AudioOutputEndpoint("hotplug", "HDMI hotplug", 1, false));
-    platform.SetState("speaker", 1);
+    platform.Mutes["speaker"] = false;
     platform.Defaults[ERole.Communications] = "hotplug";
     route.Enforce();
-    Check(platform.GetOutputs().Where(output => output.IsActive).Single().Id == "cable", "Hotplug output escaped isolation.");
+    Check(platform.GetOutputs().Where(output => output.IsActive && output.Id != "cable").All(output => platform.GetMuted(output.Id)), "Hotplug output escaped isolation.");
     route.Recover();
     Check(platform.Outputs.Single(output => output.Id == "hotplug").IsActive, "Hotplug output wasn't restored.");
     AssertOriginal(platform, route, journal);
 });
-Run("reenabling a previously disabled output does not change its original state", (platform, route, journal) =>
+Run("previously disabled outputs remain disabled", (platform, route, journal) =>
 {
     route.Enable("cable");
-    platform.SetState("disabled", 1);
     route.Enforce();
+    Check(platform.Outputs.Single(output => output.Id == "disabled").State == 2, "Originally disabled endpoint was modified.");
     route.Recover();
     AssertOriginal(platform, route, journal);
+});
+Run("existing mute survives recovery and the virtual stream is not muted", (platform, route, journal) =>
+{
+    platform.Mutes["speaker"] = true;
+    route.Enable("cable");
+    Check(!platform.GetMuted("cable"), "Virtual stream was muted.");
+    route.Recover();
+    Check(platform.GetMuted("speaker") && !platform.GetMuted("headphones"), "Original mute states were lost.");
 });
 Run("virtual endpoint loss never reenables or selects physical output", (platform, route, journal) =>
 {
@@ -52,7 +60,7 @@ Run("virtual endpoint loss never reenables or selects physical output", (platfor
     platform.SetState("cable", 2);
     ExpectFailure(route.Enforce);
     Check(route.IsAdvanced && route.EndpointId == "cable", "Lost virtual endpoint fell back to normal mode.");
-    Check(platform.GetOutputs().All(output => !output.IsActive), "Physical audio was reenabled after virtual device loss.");
+    Check(platform.GetOutputs().Where(output => output.IsActive).All(output => platform.GetMuted(output.Id)), "Physical audio was reenabled after virtual device loss.");
     platform.SetState("cable", 1);
     route.Recover();
     AssertOriginal(platform, route, journal);
@@ -63,7 +71,7 @@ Run("partial activation failure rolls back the transaction", (platform, route, j
     ExpectFailure(() => route.Enable("cable"));
     AssertOriginal(platform, route, journal);
 });
-Run("Windows ignoring disable is detected and rolled back", (platform, route, journal) =>
+Run("Windows ignoring mute is detected and rolled back", (platform, route, journal) =>
 {
     platform.IgnoreDisable = true;
     ExpectFailure(() => route.Enable("cable"));
@@ -78,6 +86,17 @@ Run("failed restore keeps durable record and succeeds on retry", (platform, rout
     var recovered = new AudioRouteController(platform, journal);
     recovered.Recover();
     AssertOriginal(platform, recovered, journal);
+});
+Run("legacy visibility transactions are still recoverable", (platform, route, journal) =>
+{
+    platform.SetState("speaker", 2);
+    File.WriteAllText(journal, JsonSerializer.Serialize(new AudioRouteJournal
+    {
+        VirtualEndpointId = "cable", DisabledEndpointIds = new List<string> { "speaker" },
+        OriginalDefaults = new Dictionary<ERole, string> { [ERole.Console] = "speaker" }
+    }));
+    route.Recover();
+    AssertOriginal(platform, route, journal);
 });
 Run("crash recovery works from a fresh controller", (platform, route, journal) =>
 {
@@ -208,6 +227,7 @@ static void AssertOriginal(FakePlatform platform, AudioRouteController route, st
     Check(platform.Outputs.Single(output => output.Id == "speaker").IsActive, "Speaker wasn't restored.");
     Check(platform.Outputs.Single(output => output.Id == "headphones").IsActive, "Headphones weren't restored.");
     Check(platform.Outputs.Single(output => output.Id == "disabled").State == 2, "Pre-disabled device was enabled.");
+    Check(!platform.GetMuted("speaker") && !platform.GetMuted("headphones"), "Original mute states weren't restored.");
     Check(platform.Defaults[ERole.Console] == "speaker", "Console role wasn't restored.");
     Check(platform.Defaults[ERole.Multimedia] == "headphones", "Multimedia role wasn't restored.");
     Check(platform.Defaults[ERole.Communications] == "speaker", "Communications role wasn't restored.");
@@ -231,6 +251,18 @@ sealed class FakePlatform : IAudioRoutePlatform
     public string? FailEnableOnce { get; set; }
     public bool IgnoreDisable { get; set; }
     public int Mutations { get; private set; }
+    public Dictionary<string, bool> Mutes { get; } = new();
+    public bool GetMuted(string id) => Mutes.GetValueOrDefault(id);
+    public void SetDisplayName(string id, string name) { }
+    public void SetMuted(string id, bool muted)
+    {
+        BeforeMutation?.Invoke(id, null);
+        Mutations++;
+        if (muted && FailDisableOnce == id) { FailDisableOnce = null; throw new InvalidOperationException("Mute failed."); }
+        if (!muted && FailEnableOnce == id) { FailEnableOnce = null; throw new InvalidOperationException("Restore failed."); }
+        if (muted && IgnoreDisable) return;
+        Mutes[id] = muted;
+    }
     public IReadOnlyList<AudioOutputEndpoint> GetOutputs() => Outputs.ToArray();
     public string? GetDefault(ERole role) => Defaults.GetValueOrDefault(role);
     public void SetDefault(string id, ERole role)
