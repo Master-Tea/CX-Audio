@@ -245,6 +245,7 @@ public sealed partial class MainWindow : Window
         UpdateReceivers();
         UpdateShare();
         UpdateOverview();
+        UpdateVirtualSpeaker();
 
         if (!UiRegression.Enabled && DateTimeOffset.UtcNow - _lastAndroidRefresh >= TimeSpan.FromSeconds(4))
         {

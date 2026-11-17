@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\CX Audio\AudioRouteController.cs" Link="AudioRouteController.cs" />
+    <Compile Include="..\..\CX Audio\AudioRoutePlatform.cs" Link="AudioRoutePlatform.cs" />
+    <Compile Include="..\..\CX Audio\WasapiInterop.cs" Link="WasapiInterop.cs" />
+    <Compile Include="..\..\CX Audio\WasapiLoopbackSession.cs" Link="WasapiLoopbackSession.cs" />
+    <Compile Include="..\..\CX Audio\AudioLatency.cs" Link="AudioLatency.cs" />
+    <Compile Include="..\..\CX Audio\VirtualSpeakerInstaller.cs" Link="VirtualSpeakerInstaller.cs" />
+  </ItemGroup>
+</Project>

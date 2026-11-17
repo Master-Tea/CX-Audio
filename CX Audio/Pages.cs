@@ -78,6 +78,21 @@ public sealed partial class AndroidPage : Page
     }
 }
 
+public sealed partial class VirtualSpeakerPage : Page
+{
+    public VirtualSpeakerPage()
+    {
+        InitializeComponent();
+        NavigationCacheMode = NavigationCacheMode.Required;
+    }
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        var host = (MainWindow)e.Parameter;
+        PageLayout.Populate(Body, "虚拟扬声器（高级）", host.VirtualSpeakerContent);
+    }
+}
+
 public sealed partial class SettingsPage : Page
 {
     public SettingsPage()

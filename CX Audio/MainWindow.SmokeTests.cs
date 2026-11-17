@@ -34,7 +34,7 @@ public sealed partial class MainWindow
             var cachedPages = new Dictionary<Type, object>();
             var items = Navigation.MenuItems.Cast<NavigationViewItem>().Cast<object>()
                 .Append(Navigation.SettingsItem).ToArray();
-            var types = new[] { typeof(OverviewPage), typeof(ConnectionsPage), typeof(AndroidPage), typeof(SettingsPage) };
+            var types = new[] { typeof(OverviewPage), typeof(ConnectionsPage), typeof(AndroidPage), typeof(VirtualSpeakerPage), typeof(SettingsPage) };
             for (var round = 0; round < 4; round++)
             {
                 for (var index = 0; index < items.Length; index++)
@@ -80,6 +80,17 @@ public sealed partial class MainWindow
                             throw new InvalidOperationException("Android device binding is missing.");
                     }
                     if (index == 3)
+                    {
+                        if (VirtualSpeakerContent.Parent is null)
+                            throw new InvalidOperationException("Virtual speaker page is not independently hosted.");
+                        if (_server.VirtualSpeaker.Snapshot.Advanced)
+                            throw new InvalidOperationException("Advanced mode must not activate at startup.");
+                        if (_options.Demo && (_virtualEnableButton.IsEnabled || _virtualInstallButton.IsEnabled))
+                            throw new InvalidOperationException("Demo mode exposed audio system mutations.");
+                        if (!_virtualModeText.Text.Contains("普通模式", StringComparison.Ordinal))
+                            throw new InvalidOperationException("Ordinary mode status is missing.");
+                    }
+                    if (index == 4)
                     {
                         if (!_settingsContent.Children.OfType<Button>().Any(button =>
                                 string.Equals(button.Content?.ToString(), "打开网页控制台", StringComparison.Ordinal)))
@@ -173,11 +184,14 @@ public sealed partial class MainWindow
                     StartupTrace.Write(checks[^1]);
                 }
             }
-            Navigation.SelectedItem = items[3];
             var themeControl = _settingsContent.Children.OfType<ComboBox>().Single();
             themeControl.SelectedIndex = 1;
             SelectAccent("#0078D4");
             AppWindow.Resize(new SizeInt32(1060, 980));
+            Navigation.SelectedItem = items[3];
+            await Task.Delay(250);
+            await CaptureUiElementAsync(RootGrid, "virtual-speaker-light.png");
+            Navigation.SelectedItem = items[4];
             await Task.Delay(250);
             await CaptureUiElementAsync(RootGrid, "settings-light.png");
             themeControl.SelectedIndex = 2;

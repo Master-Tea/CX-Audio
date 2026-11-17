@@ -58,6 +58,7 @@
     detailRate: $('#detail-rate'),
     detailProfile: $('#detail-profile'),
     detailBuffer: $('#detail-buffer'),
+    detailOutput: $('#detail-output'),
     detailRtt: $('#detail-rtt'),
     detailEngine: $('#detail-engine'),
     detailUnderruns: $('#detail-underruns'),
@@ -71,6 +72,8 @@
     toast: $('#rx-toast'),
     orbCanvas: $('#orb-canvas')
   };
+
+  const latencyPolicy = window.CXAudioLatency;
 
   const R = {
     code: '',
@@ -122,7 +125,8 @@
     lastStatsSent: 0,
     canvasReady: false,
     reducedMotion: false,
-    lastOrbDraw: 0
+    lastOrbDraw: 0,
+    lastServerMessageAt: 0
   };
 
   init();
@@ -137,7 +141,8 @@
     R.localMuted = localStorage.getItem('cx.muted') === '1';
     R.reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     R.wired = params.get('wired') === '1' || params.get('usb') === '1';
-    R.backgroundEnabled = readBoolPref('cx.background', true);
+    R.backgroundEnabled = true;
+    writeBoolPref('cx.background', true);
     R.keepAwake = readBoolPref('cx.keepawake', false);
 
     els.deviceName.value = R.name;
@@ -155,7 +160,7 @@
       validateCode(R.code);
     }
 
-    window.setInterval(sendStats, 2000);
+    window.setInterval(maintainConnection, 2000);
     window.setInterval(updateConnectionAge, 5000);
   }
 
@@ -398,7 +403,9 @@
     if (R.silentAudio) releaseBackgroundPlayback();
 
     configureAudioSession();
-    const context = new AudioContextClass({ latencyHint: 'interactive' });
+    let context;
+    try { context = new AudioContextClass({ latencyHint: 0.001 }); }
+    catch { context = new AudioContextClass({ latencyHint: 'interactive' }); }
     // Safari/iOS needs resume() to be called directly inside the user gesture.
     // Keep this early call alive while the player is prepared.
     void context.resume().catch(() => {});
@@ -432,6 +439,10 @@
       player.onMessage = handlePlayerMessage;
 
       R.ctx = context;
+      context.addEventListener('statechange', () => {
+        if (R.started && !R.intentional && (context.state === 'suspended' || context.state === 'interrupted'))
+          context.resume().catch(() => {});
+      });
       R.player = player;
       R.audioEngine = player.engine;
       R.gain = gain;
@@ -458,7 +469,7 @@
   async function createWorkletPlayer(context) {
     if (!context.audioWorklet || typeof window.AudioWorkletNode !== 'function') return null;
     try {
-      await context.audioWorklet.addModule('/assets/audio-worklet.js?v=1.3.0');
+      await context.audioWorklet.addModule('/assets/audio-worklet.js?v=1.3.4');
       const node = new window.AudioWorkletNode(context, 'cx-audio', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
@@ -508,7 +519,7 @@
     }
 
     let node = null;
-    for (const size of [4096, 2048, 1024]) {
+    for (const size of [256, 512, 1024]) {
       try {
         node = factory.call(context, size, 0, 2);
         break;
@@ -518,13 +529,13 @@
     }
     if (!node) throw new Error('无法创建浏览器音频输出节点。');
 
-    const compatOverheadMs = 60;
+    const blockMs = node.bufferSize * 1000 / context.sampleRate;
     const state = {
       sourceRate: 48000,
       channels: 2,
       outputRate: context.sampleRate || 48000,
       baseTargetMs: 240,
-      targetMs: 240 + compatOverheadMs,
+      targetMs: 240,
       boostMs: 0,
       ring: null,
       ringFrames: 0,
@@ -546,7 +557,7 @@
     };
 
     function updateTarget() {
-      state.targetMs = Math.min(900, state.baseTargetMs + compatOverheadMs + state.boostMs);
+      state.targetMs = latencyPolicy.effectiveTarget(state.baseTargetMs, state.boostMs, blockMs);
     }
 
     function allocate(rate) {
@@ -566,6 +577,7 @@
       state.playing = false;
       state.step = state.baseStep;
       state.fade = 0;
+      state.rateBias = 0;
     }
 
     function push(buffer) {
@@ -578,10 +590,11 @@
       const view = new DataView(buffer);
       const targetFrames = (state.targetMs / 1000) * state.sourceRate;
       let available = state.writePos - state.readPos;
-      const safetyCap = Math.min(state.ringFrames - 1, targetFrames + state.sourceRate * 0.35);
-      if (available > safetyCap) {
-        // Never let a slow/odd audio clock turn into seconds of latency.
-        state.readPos = state.writePos - targetFrames;
+      const safetyCap = Math.min(state.ringFrames - 1, targetFrames + state.sourceRate * latencyPolicy.backlogMs(state.baseTargetMs) / 1000);
+      if (available + frames > safetyCap) {
+        // Network stalls must not become a delayed replay of old audio.
+        state.readPos = Math.max(state.readPos, Math.min(state.writePos, state.writePos + frames - targetFrames));
+        state.fade = 0;
         available = state.writePos - state.readPos;
         state.overruns += 1;
         state.boostMs = Math.max(0, state.boostMs - 20);
@@ -626,7 +639,7 @@
       }
 
       const targetFrames = (state.targetMs / 1000) * state.sourceRate;
-      const primeFrames = targetFrames + state.sourceRate * 0.06;
+      const primeFrames = Math.max(targetFrames, state.sourceRate * 0.005 + frames * state.baseStep + 2);
       if (!state.primed) {
         if (state.writePos - state.readPos < primeFrames) {
           reportStats();
@@ -637,7 +650,7 @@
         state.fade = 0;
       }
 
-      const fadeStep = 1 / Math.max(1, state.outputRate * 0.018);
+      const fadeStep = 1 / Math.max(1, state.outputRate * (state.baseTargetMs <= 30 ? 0.003 : 0.018));
       for (let i = 0; i < frames; i += 1) {
         if (state.writePos - state.readPos <= 1) {
           state.underruns += 1;
@@ -655,7 +668,7 @@
           }
           // Raise the target for the rest of this session. Occasional Wi-Fi
           // scheduling hiccups then become extra latency instead of stutter.
-          state.boostMs = Math.min(180, state.boostMs + 35);
+          state.boostMs = latencyPolicy.increaseBoost(state.baseTargetMs, state.boostMs);
           updateTarget();
           break;
         }
@@ -679,8 +692,9 @@
 
       const available = state.writePos - state.readPos;
       const error = (available - targetFrames) / Math.max(targetFrames, 1);
-      state.rateBias = Math.max(-0.03, Math.min(0.03, state.rateBias + error * 0.000018));
-      const correction = Math.max(-0.03, Math.min(0.03, error * 0.02 + state.rateBias));
+      const elapsed = frames / state.outputRate;
+      state.rateBias = Math.max(-0.005, Math.min(0.005, state.rateBias + error * elapsed * 0.0003));
+      const correction = Math.max(-0.01, Math.min(0.01, error * 0.002 + state.rateBias));
       state.step = state.baseStep * (1 + correction);
       reportStats();
     }
@@ -709,12 +723,13 @@
 
     const player = {
       engine: 'script',
+      blockMs,
       node,
       onMessage: null,
       sendAudio: push,
       setConfig(sampleRate, channels, targetMs) {
         state.channels = Math.max(1, Math.min(2, Number(channels) || 2));
-        state.baseTargetMs = Math.max(60, Math.min(1200, Number(targetMs) || 240));
+        state.baseTargetMs = latencyPolicy.clampTarget(targetMs);
         state.boostMs = 0;
         updateTarget();
         const rateChanged = Number(sampleRate) !== state.sourceRate;
@@ -723,7 +738,9 @@
         state.paused = false;
       },
       setTarget(targetMs) {
-        state.baseTargetMs = Math.max(60, Math.min(1200, Number(targetMs) || 240));
+        state.baseTargetMs = latencyPolicy.clampTarget(targetMs);
+        state.boostMs = 0;
+        reset();
         updateTarget();
       },
       pause() {
@@ -780,17 +797,10 @@
     }
   }
 
-  function setBackgroundEnabled(enabled) {
-    R.backgroundEnabled = Boolean(enabled);
-    writeBoolPref('cx.background', R.backgroundEnabled);
-    if (R.backgroundEnabled) {
-      ensureBackgroundPlayback();
-      setupMediaSession();
-      toast('已开启后台 / 熄屏播放');
-    } else {
-      releaseBackgroundPlayback();
-      toast('已关闭后台播放，请保持页面在前台');
-    }
+  function setBackgroundEnabled() {
+    R.backgroundEnabled = true;
+    writeBoolPref('cx.background', true);
+    ensureBackgroundPlayback();
     updateBackgroundUi();
   }
 
@@ -820,7 +830,8 @@
         });
       }
     }
-    setupMediaSession();
+    if (!R.mediaSessionReady) setupMediaSession();
+    updateMediaSessionState();
   }
 
   function ensureSilentAudio(context) {
@@ -877,10 +888,10 @@
           title: R.hostName || 'CX Audio',
           artist: R.wired ? 'USB 有线 · 系统音频' : '本地网络 · 系统音频',
           album: 'CX Audio',
-          artwork: [{ src: '/assets/cover.png', sizes: '300x300', type: 'image/png' }]
+          artwork: [{ src: '/assets/cover.png', sizes: '1254x1254', type: 'image/png' }]
         });
       }
-      navigator.mediaSession.playbackState = (R.streamPlaying && !R.mediaPaused) ? 'playing' : 'paused';
+      navigator.mediaSession.playbackState = R.started && !R.intentional ? 'playing' : 'none';
       navigator.mediaSession.setActionHandler('play', () => setMediaPaused(false));
       navigator.mediaSession.setActionHandler('pause', () => setMediaPaused(true));
       navigator.mediaSession.setActionHandler('stop', () => setMediaPaused(true));
@@ -898,7 +909,7 @@
     if (!R.mediaSessionReady || !('mediaSession' in navigator)) return;
     try {
       navigator.mediaSession.playbackState =
-        (R.streamPlaying && !R.mediaPaused) ? 'playing' : 'paused';
+        R.started && !R.intentional ? 'playing' : 'none';
     } catch {
       // ignored
     }
@@ -959,10 +970,13 @@
       els.backgroundChip.hidden = !visible;
       if (visible) {
         const label = els.backgroundChip.querySelector('span');
-        if (label) label.textContent = R.mediaSessionReady ? '熄屏可播' : '后台保活';
+        if (label) label.textContent = '持续在线';
       }
     }
-    if (els.backgroundToggle) els.backgroundToggle.checked = R.backgroundEnabled;
+    if (els.backgroundToggle) {
+      els.backgroundToggle.checked = true;
+      els.backgroundToggle.disabled = true;
+    }
     if (els.keepAwakeToggle) els.keepAwakeToggle.checked = R.keepAwake;
     updateDetails();
   }
@@ -992,11 +1006,13 @@
     socket.addEventListener('open', () => {
       if (generation !== R.socketGeneration) return;
       R.connected = true;
+      R.lastServerMessageAt = Date.now();
       setStatus(R.gotHello ? 'live' : 'connecting', R.gotHello ? '已连接' : '正在握手');
     });
 
     socket.addEventListener('message', (event) => {
       if (generation !== R.socketGeneration) return;
+      R.lastServerMessageAt = Date.now();
       if (typeof event.data === 'string') {
         handleServerMessage(event.data);
       } else if (event.data instanceof ArrayBuffer && R.player) {
@@ -1104,6 +1120,7 @@
     R.reconnectAttempts += 1;
     const delay = Math.min(9000, 900 * Math.pow(1.6, Math.min(R.reconnectAttempts, 5)));
     R.reconnectTimer = window.setTimeout(() => {
+      R.reconnectTimer = 0;
       if (!R.connected && !R.intentional && R.started) connectAudio();
     }, delay);
   }
@@ -1147,6 +1164,7 @@
       case 'profile':
         R.profile = message.profile || 'balanced';
         R.targetMs = message.targetMs || R.targetMs;
+        R.stats.targetMs = R.targetMs;
         if (R.player) {
           R.player.setTarget(R.targetMs);
         }
@@ -1200,8 +1218,9 @@
     R.masterMuted = Boolean(message.muted);
     R.profile = message.profile || 'balanced';
     R.targetMs = message.targetMs || 240;
+    R.stats.targetMs = R.targetMs;
     R.sampleRate = message.sampleRate || 48000;
-    R.wired = Boolean(message.wired) || R.wired;
+    R.wired = Boolean(message.wired);
 
     els.joinHostName.textContent = R.hostName;
     els.hostName.textContent = R.hostName;
@@ -1294,6 +1313,7 @@
       }
     }
 
+    ensureBackgroundPlayback();
     applyGain();
     updatePlaybackUi();
     updateMediaSessionState();
@@ -1330,7 +1350,7 @@
     const target = R.streamPlaying && !R.masterMuted && !R.localMuted && !R.mediaPaused
       ? master * local
       : 0;
-    R.gain.gain.setTargetAtTime(target, R.ctx.currentTime, 0.04);
+    R.gain.gain.setTargetAtTime(target, R.ctx.currentTime, R.profile === 'low' ? 0.003 : 0.04);
   }
 
   function updatePlaybackUi() {
@@ -1393,6 +1413,20 @@
       : seconds < 5 ? '刚刚连接' : seconds + ' 秒';
     els.playerNetwork.textContent = (R.wired ? 'USB 有线 · ' : '') +
       (R.connected ? '已连接 · ' : '重连中 · ') + label;
+  }
+
+  function maintainConnection() {
+    if (!R.started || R.intentional) return;
+    ensureBackgroundPlayback();
+    if (R.ctx && (R.ctx.state === 'suspended' || R.ctx.state === 'interrupted'))
+      R.ctx.resume().catch(() => {});
+    if (R.connected && R.lastServerMessageAt && Date.now() - R.lastServerMessageAt > 20000) {
+      reconnectNow();
+      return;
+    }
+    if (!R.connected && !R.reconnectTimer) scheduleReconnect();
+    if (R.keepAwake && !R.wakeLock) requestWakeLock();
+    sendStats();
   }
 
   function sendStats() {
@@ -1494,9 +1528,17 @@
   function updateDetails() {
     els.detailHost.textContent = R.hostName || '—';
     els.detailRate.textContent = R.sampleRate ? (R.sampleRate / 1000).toFixed(R.sampleRate % 1000 === 0 ? 0 : 1) + ' kHz' : '—';
-    const profileLabels = { low: '低延迟 · 120 ms', balanced: '均衡 · 240 ms', stable: '稳定 · 450 ms' };
-    els.detailProfile.textContent = profileLabels[R.profile] || (R.targetMs + ' ms');
+    const profileLabels = { low: '低延迟', balanced: '均衡', stable: '稳定' };
+    const target = R.stats.targetMs || R.targetMs;
+    els.detailProfile.textContent = (profileLabels[R.profile] || R.profile) + ' · 缓冲目标 ' + Math.round(target) + ' ms';
     els.detailBuffer.textContent = R.stats.bufferMs > 0 ? R.stats.bufferMs + ' ms' : '缓冲中';
+    if (els.detailOutput) {
+      const base = Number(R.ctx?.baseLatency);
+      const output = Number(R.ctx?.outputLatency);
+      els.detailOutput.textContent = Number.isFinite(base) && Number.isFinite(output)
+        ? Math.round((base + output) * 1000) + ' ms（浏览器报告）'
+        : Number.isFinite(base) ? Math.round(base * 1000) + ' ms（处理延迟，输出未知）' : '浏览器未提供';
+    }
     els.detailRtt.textContent = R.rtt > 0 ? R.rtt + ' ms' : '—';
     els.detailUnderruns.textContent = String(R.stats.underruns || 0);
     if (els.detailWired) {
@@ -1504,7 +1546,7 @@
     }
     if (els.detailBackground) {
       els.detailBackground.textContent = R.backgroundEnabled
-        ? (R.mediaSessionReady ? '已启用 · 媒体会话' : '已启用 · 保活音频')
+        ? '持续在线 · 暂停时保持连接'
         : '已关闭';
     }
     if (els.detailKeepAwake) {

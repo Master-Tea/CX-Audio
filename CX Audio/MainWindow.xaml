@@ -34,6 +34,7 @@
                 <NavigationViewItem x:Name="OverviewNavigationItem" Content="概览" Tag="overview" Icon="Home"/>
                 <NavigationViewItem Content="无线连接" Tag="connections" Icon="Globe"/>
                 <NavigationViewItem Content="Android 有线" Tag="android" Icon="Phone"/>
+                <NavigationViewItem Content="虚拟扬声器（高级）" Tag="virtual-speaker" Icon="Volume"/>
             </NavigationView.MenuItems>
             <Grid RowSpacing="8">
                 <Grid.RowDefinitions>

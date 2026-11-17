@@ -25,7 +25,7 @@ async function until(check, description, timeout = 15000) {
   throw new Error(`Timed out: ${description}`);
 }
 
-test('Fluent pages preserve audio control and live desktop appearance', { timeout: 150000 }, async () => {
+test('Fluent pages preserve audio control and live desktop appearance', { timeout: 210000 }, async () => {
   await mkdir(data, { recursive: true });
   const executable = path.join(root, 'diagnostic-build/CXAudioOutput.exe');
   assert.ok(existsSync(executable), 'Publish a Debug diagnostic-build first.');
@@ -103,9 +103,35 @@ test('Fluent pages preserve audio control and live desktop appearance', { timeou
     await wired.locator('#join-form').waitFor({ state: 'visible' });
     await synced(wired, initial);
     assert.ok(wired.url().includes('wired=1'), 'Android wired route is not redirected to studio');
-    await wired.close();
+    let wiredHello;
+    let wiredProfile;
+    let wiredStream;
+    let wiredFrameBytes = 0;
+    wired.on('websocket', socket => socket.on('framereceived', frame => {
+      if (typeof frame.payload === 'string') {
+        const payload = JSON.parse(frame.payload);
+        if (payload.type === 'hello') wiredHello = payload;
+        if (payload.type === 'profile') wiredProfile = payload;
+        if (payload.type === 'stream') wiredStream = payload;
+      } else wiredFrameBytes = frame.payload.length;
+    }));
+    await wired.locator('#device-name').fill('USB 低延迟测试');
+    await wired.locator('#start-button').click();
+    await wired.locator('#player-view').waitFor({ state: 'visible' });
+    await until(() => wiredHello && wiredFrameBytes > 0, 'USB handshake and PCM frames');
+    assert.equal(wiredHello.frameMs, 5);
+    assert.equal(wiredHello.wired, true);
+    assert.ok(wiredFrameBytes <= 48000 * 4 * 0.005, 'PCM packet duration is at most 5 ms');
+    await mobileContext.addInitScript(() => {
+      localStorage.setItem('cx.background', 'false');
+      globalThis.__mediaActions = {};
+      const original = navigator.mediaSession.setActionHandler.bind(navigator.mediaSession);
+      navigator.mediaSession.setActionHandler = (name, callback) => {
+        globalThis.__mediaActions[name] = callback; original(name, callback);
+      };
+    });
     await receiver.goto(`${base}/listen?code=${state.accessCode}`);
-    await receiver.waitForFunction(() => customElements.get('fluent-switch'));
+    await receiver.waitForFunction(() => customElements.get('fluent-switch') && customElements.get('fluent-button') && document.documentElement.classList.contains('fluent-ready'));
     await synced(receiver, initial);
     await studio.screenshot({ path: path.join(artifacts, 'studio-light.png'), fullPage: true });
     await receiver.screenshot({ path: path.join(artifacts, 'receiver-join-light.png'), fullPage: true });
@@ -117,6 +143,7 @@ test('Fluent pages preserve audio control and live desktop appearance', { timeou
       'rgb(' + dark.accentFillColor.match(/[a-f0-9]{2}/gi).map(part => parseInt(part, 16)).join(', ') + ')');
     const expectedText = foregroundOn(dark.accentFillColor);
     const expectedTextRgb = 'rgb(' + expectedText.match(/[a-f0-9]{2}/gi).map(part => parseInt(part, 16)).join(', ') + ')';
+    await receiver.waitForFunction(expected => getComputedStyle(document.querySelector('#start-button')).color === expected, expectedTextRgb);
     assert.equal(await receiver.locator('#start-button').evaluate(element => getComputedStyle(element).color), expectedTextRgb, 'Actual Fluent primary label meets contrast requirements');
     await studio.screenshot({ path: path.join(artifacts, 'studio-dark.png'), fullPage: true });
     await receiver.screenshot({ path: path.join(artifacts, 'receiver-join-dark.png'), fullPage: true });
@@ -151,10 +178,9 @@ test('Fluent pages preserve audio control and live desktop appearance', { timeou
     await compatibility.screenshot({ path: path.join(artifacts, 'receiver-http-compatibility.png'), fullPage: true });
     await receiver.locator('#details-button').click();
     await receiver.locator('#details-dialog').waitFor({ state: 'visible' });
-    const backgroundBefore = await receiver.locator('#background-toggle').evaluate(element => element.checked);
-    await receiver.locator('#background-toggle').click();
-    assert.equal(await receiver.locator('#background-toggle').evaluate(element => element.checked), !backgroundBefore);
-    await receiver.locator('#background-toggle').click();
+    assert.equal(await receiver.locator('#background-toggle').evaluate(element => element.checked && element.disabled), true,
+      'Background online policy is always on, including migrated preferences');
+    assert.equal(await receiver.evaluate(() => localStorage.getItem('cx.background')), '1');
     await receiver.locator('#close-details').click();
     await receiver.screenshot({ path: path.join(artifacts, 'receiver-playing-dark.png'), fullPage: true });
     await studio.screenshot({ path: path.join(artifacts, 'studio-with-receiver.png'), fullPage: true });
@@ -165,6 +191,43 @@ test('Fluent pages preserve audio control and live desktop appearance', { timeou
     await until(() => hostState?.muted === false, 'Fluent master unmute control');
     await studio.locator('[data-profile=low]').click();
     await until(() => hostState?.profile === 'low', 'Fluent latency profile control');
+    await until(() => wiredProfile?.targetMs === 6, 'USB receives its 6 ms target');
+    await receiver.locator('#details-button').click();
+    await receiver.waitForFunction(() => /缓冲目标 (3\d|40) ms/.test(document.querySelector('#detail-profile').textContent));
+    await receiver.locator('#close-details').click();
+    await compatibility.locator('#details-button').click();
+    await compatibility.waitForFunction(() => /缓冲目标 (3\d|40) ms/.test(document.querySelector('#detail-profile').textContent));
+    await compatibility.locator('#close-details').click();
+    await until(() => hostState?.receivers?.some(item => item.name === 'HTTP 兼容模式测试' && item.playback === 'playing'),
+      'HTTP compatibility renderer produces audio in low mode');
+
+    // Hold PC playback paused beyond the former 18-second expiry, with a hidden
+    // document and media controls paused. Only explicit disconnect releases it.
+    await receiver.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await until(() => receiver.evaluate(() => typeof globalThis.__mediaActions?.pause === 'function'), 'media control handlers');
+    await receiver.evaluate(() => globalThis.__mediaActions.pause());
+    await studio.locator('#pause-button').click();
+    await until(() => hostState?.capture?.paused === true, 'PC pause');
+    await until(() => hostState?.receivers?.some(item => item.name === 'Fluent 手机测试' && item.playback === 'paused'), 'paused receiver stats');
+    await delay(22000);
+    const keepAlive = await receiver.evaluate(() => ({
+      online: /已连接/.test(document.querySelector('#player-network').textContent),
+      media: navigator.mediaSession.playbackState,
+      audio: [...document.querySelectorAll('audio')].some(element => !element.paused && element.srcObject?.active),
+      stored: localStorage.getItem('cx.background')
+    }));
+    assert.deepEqual(keepAlive, { online: true, media: 'playing', audio: true, stored: '1' }, 'Paused hidden receiver retains media keepalive and connection');
+    assert.ok(hostState.receivers.some(item => item.name === 'Fluent 手机测试'), 'Paused mobile session still registered');
+    await receiver.evaluate(() => { delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange')); globalThis.__mediaActions.play(); });
+    const resumeFrames = audioFrames;
+    await studio.locator('#pause-button').click();
+    await until(() => hostState?.capture?.paused === false && audioFrames > resumeFrames + 10, 'resume on existing receiver');
+    await until(() => wiredStream?.playing === true && wiredStream.targetMs === 6, 'USB retains 6 ms target across pause/resume');
+    await until(() => hostState.receivers.some(item => item.name === 'Fluent 手机测试' && item.playback === 'playing'), 'resumed audio playback');
+    await wired.close();
 
     for (const page of [studio, receiver]) for (const width of [360, 390, 768, 1440]) {
       await page.setViewportSize({ width, height: 960 });

@@ -1,4 +1,4 @@
-# CX Audio 1.3
+# CX Audio 1.4
 
 <img src="docs/icon-preview.png" width="72" alt="CX Audio 透明底图标">
 
@@ -73,9 +73,45 @@ Release 提供 Windows x64 ZIP、已签名 MSIX、安装脚本和 SHA256 校验�
 
 兼容模式在旧版 iOS Safari、旧 Android WebView、智能电视浏览器等环境下也比 AudioWorklet 更容易工作。
 
+## 虚拟扬声器（高级）
+
+侧边栏新增“虚拟扬声器（高级）”，可在两种模式之间切换：
+
+| 模式 | 电脑本地输出 | 网络 / USB 接收设备 | 采集来源 |
+| --- | --- | --- | --- |
+| 普通模式（默认） | 正常播放 | 正常播放 | Windows 默认播放设备的 WASAPI 回环 |
+| 虚拟扬声器（高级） | 禁用其他 Windows 播放端点 | 正常播放 | 固定的 VB-CABLE 虚拟播放端点 |
+
+首次使用时，在高级页面点击“安装虚拟扬声器驱动”。应用从 [VB-Audio 官网](https://vb-audio.com/Cable/) 下载 `VBCABLE_Driver_Pack43.zip`，核对固定 SHA256，再通过 Windows 验证安装程序的 Authenticode 签名和 VB-Audio / Vincent Burel 发布者身份。Windows 会请求管理员权限；在官方安装器中点击 **Install Driver**，按提示重启电脑后刷新设备。驱动安装会在系统中注册真正的 `CABLE Input (VB-Audio Virtual Cable)` 播放设备。VB-CABLE 是第三方 Donationware，按其许可使用；CX Audio 的 ZIP / MSIX 不内嵌或重新分发其驱动。
+
+点击“启用高级模式”后，应用将默认、媒体、通信三类输出切换到虚拟扬声器，禁用其余所有当前活动的播放端点（包括可能转送声音的其他虚拟混音设备），并验证设备状态。采集固定到这个虚拟端点，不会在设备丢失时回退到物理扬声器。暂停串流、手机断开或虚拟设备丢失时，本地输出仍保持禁用；在高级页面点击“恢复普通模式”恢复本地声音。演示模式不允许安装驱动或启用系统音频隔离。
+
+设备状态会持续检查，新连接或被重新启用的其他播放设备会再次禁用。**这是 Windows 播放端点级隔离，不能承诺设备热插拔、其他管理员程序修改设备、内核驱动绕过 Windows 音频引擎等情况下的硬件级绝对零发声。** 新设备出现到检查禁用之间可能存在短暂窗口；需要这一等级保证时应断开或关闭物理扬声器。
+
+每次修改设备前，应用将恢复记录写入数据目录的 `audio-route-recovery.json` 并刷新到磁盘。切回普通模式或退出时，恢复此前启用的设备及三类默认输出，原本禁用的设备继续保持禁用。独立守护进程在主进程异常退出后执行恢复；若电脑断电或设备暂时拔出，记录会保留，下一次启动音频服务时重试，也可接回原设备后点击“恢复普通模式”。高级模式不会在启动时自动启用。
+
+开发验证：
+
+```powershell
+dotnet run --project .\tests\AudioRoutingChecks\AudioRoutingChecks.csproj
+dotnet run --project .\tests\WasapiInteropChecks\WasapiInteropChecks.csproj
+```
+
+路由测试使用模拟音频平台验证隔离与恢复事务，不修改真实设备。向第一个命令额外传入官方 `VBCABLE_Setup_x64.exe` 路径和已发布的 `CXAudioOutput.exe` 路径，可检查真实安装程序签名，以及守护进程的就绪握手、主进程退出、独占恢复锁和空事务恢复。真实驱动安装、设备隔离与真实手机播放仍需在目标电脑上验收。
+
+## 最低延迟与后台在线
+
+选择“低延迟”后，电脑端按最多 5 ms 的 PCM 音频分包发送；USB 接收缓冲目标为 6 ms，无线为 30 ms。ADB localhost 与已识别的 USB 网络共享网卡使用 USB 目标。AudioWorklet 不再附加固定的 60 ms 安全缓冲和 60 ms 启播缓冲；局域网 HTTP 的 ScriptProcessor 兼容模式优先使用 256 帧回调，失败时回退到 512 / 1024 帧。发生欠载时，低延迟档的自适应目标最多升至 USB 8 ms、无线 40 ms；旧音频会在网络恢复后被丢弃，以避免积压重播。均衡和稳定档的基础目标仍为 240 / 450 ms。
+
+**USB 15 ms 内、无线 60 ms 内是端到端优化目标，尚非真实手机声学测量结果。** 自动化测试运行实际播放器代码，以 PCM 脉冲检查缓冲与渲染延迟，并覆盖 44.1 / 48 / 96 kHz、Windows 10 ms 批量交付和断流恢复；这些测试不包含 Windows 音频设备、真实网络和手机扬声器的延迟。接收端“连接详情”分别显示当前缓冲、缓冲目标和浏览器报告的输出延迟；浏览器报告也不等于完整端到端延迟。设备引擎周期、Wi-Fi 抖动、浏览器兼容回退及蓝牙输出都可能影响最终结果。
+
+接收端连接后固定启用后台保活，迁移并覆盖旧的关闭偏好。暂停串流、媒体控制暂停、静音和无信号时仍保持音频上下文、保活媒体和网络连接；心跳超时放宽至 120 秒，浏览器恢复执行后会检查连接并自动重连。明确断开连接时释放资源。“屏幕常亮”仍可独立选择。
+
+网页无法禁止手机系统冻结或结束浏览器进程；持续在线策略在浏览器允许后台音频与网络运行的范围内生效。真实锁屏行为需要在目标手机上验证。
+
 ## 稳定性改动
 
-1.2 针对偶发杂音、爆音和卡顿做了以下调整：
+以下为 1.2 的历史调整；当前最低延迟参数以上节为准：
 
 - **捕获线程**：设置 `AboveNormal` 线程优先级，并注册 Windows MMCSS `Pro Audio` 类别，减少 UI / 网页 / 网络负载对 WASAPI 包泵的调度影响。
 - **兼容模式缓冲**：ScriptProcessor 缓冲从 2048 提高到 4096 帧，目标缓冲额外增加 60 ms；首次启动多预缓冲 60 ms。
@@ -114,14 +150,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 输出文件：
 
-- `dist\msix\CXAudioOutput_1.3.3.0_x64.msix`
+- `dist\msix\CXAudioOutput_1.4.0.0_x64.msix`
 - `dist\msix\MasterTea-CXAudio.cer`
 
 安装前先信任本次构建使用的自签名证书，再安装 MSIX：
 
 ```powershell
 Import-Certificate .\MasterTea-CXAudio.cer -CertStoreLocation Cert:\CurrentUser\Root
-Add-AppxPackage .\CXAudioOutput_1.3.3.0_x64.msix
+Add-AppxPackage .\CXAudioOutput_1.4.0.0_x64.msix
 ```
 
 安装包信息：
@@ -129,7 +165,7 @@ Add-AppxPackage .\CXAudioOutput_1.3.3.0_x64.msix
 ```text
 Publisher : MasterTea
 Identity  : MasterTea.CXAudio
-Version   : 1.3.3.0
+Version   : 1.4.0.0
 Arch      : x64
 Signature : SHA256 self-signed certificate
 ```
@@ -360,6 +396,15 @@ npm run build
 
 回归验证：先将 Debug 应用发布到 `diagnostic-build`，再在 `web` 目录运行 `npm test`。首次运行需 `npx playwright install chromium --only-shell`。浏览器测试覆盖实际 WinUI 外观更改、SSE 重连、二维码解码、Fluent 按钮/开关、移动布局及演示音频传输。原生 UI 回归入口为 `scripts/run_ui_smoke.py`。
 
+### 一次生成发布包
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\build-release.ps1
+```
+
+输出到 `dist\release\v1.4.0`：自包含 x64 ZIP、沿用原证书签名的 MSIX、公开证书、`Install-CXAudio.ps1`、发布说明和 `SHA256SUMS.txt`。驱动由用户首次使用高级模式时从 VB-Audio 官网另行安装。脚本会同步复制新生成的 XBF 与资源索引，避免发布目录残留旧侧边栏。
+
 ### 打包 MSIX
 
 ```powershell
@@ -368,7 +413,7 @@ npm run build
 
 脚本启用项目 MSIX 工具链，生成自包含 x64 包，并使用 Windows SDK 的 `signtool` 签名。脚本默认按既有 thumbprint 从当前用户证书库读取原证书；找不到原证书或私钥时会直接停止，绝不会生成新的签名证书。也可以通过 `-CertificatePath` 和 `-CertificatePassword` 指向原始 PFX，脚本会校验 thumbprint 和清单发布者后再签名。
 
-输出：`dist\msix\CXAudioOutput_1.3.3.0_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
+输出：`dist\msix\CXAudioOutput_1.4.0.0_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
 
 ## 故障排查
 

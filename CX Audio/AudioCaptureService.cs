@@ -7,6 +7,7 @@ public sealed class AudioCaptureService : BackgroundService
 {
     private readonly AppState _state;
     private readonly AudioHub _hub;
+    private readonly VirtualSpeakerService _virtualSpeaker;
     private readonly LaunchOptions _options;
     private readonly ILogger<AudioCaptureService> _logger;
     private readonly AutoResetEvent _wake = new(false);
@@ -14,12 +15,23 @@ public sealed class AudioCaptureService : BackgroundService
     private volatile bool _acceptFrames;
 
     public AudioCaptureService(AppState state, AudioHub hub, LaunchOptions options,
-        ILogger<AudioCaptureService> logger)
+        VirtualSpeakerService virtualSpeaker, ILogger<AudioCaptureService> logger)
     {
         _state = state;
         _hub = hub;
         _options = options;
         _logger = logger;
+        _virtualSpeaker = virtualSpeaker;
+        _virtualSpeaker.RouteChanged += RoutingChanged;
+    }
+
+    private bool RouteUnavailable => _virtualSpeaker.Snapshot is { } route
+        && (route.Busy || (route.Advanced ? !route.Protected : route.RecoveryPending));
+
+    private void RoutingChanged()
+    {
+        _acceptFrames = false;
+        _wake.Set();
     }
 
     public bool IsPaused => _paused;
@@ -79,6 +91,16 @@ public sealed class AudioCaptureService : BackgroundService
                 continue;
             }
 
+            if (RouteUnavailable)
+            {
+                _acceptFrames = false;
+                _state.SetCapture("error", null, 0, 0, 0,
+                    _virtualSpeaker.Snapshot.Error ?? "正在切换音频模式…");
+                _hub.NotifyStream(false, "error");
+                Wait(250, cancellationToken);
+                continue;
+            }
+
             if (_options.Demo)
             {
                 RunDemo(cancellationToken);
@@ -91,7 +113,8 @@ public sealed class AudioCaptureService : BackgroundService
                 _state.SetCapture("starting", null, 0, 0, 0);
                 _hub.NotifyStream(false, "starting");
 
-                using var session = WasapiLoopbackSession.Create();
+                var routeRevision = _virtualSpeaker.Revision;
+                using var session = WasapiLoopbackSession.Create(_virtualSpeaker.Snapshot.EndpointId);
                 var format = session.Format;
                 session.Start();
                 _acceptFrames = true;
@@ -101,7 +124,8 @@ public sealed class AudioCaptureService : BackgroundService
                 _logger.LogInformation("Streaming system audio: {Device} ({Rate} Hz, {Channels} ch, {Bits}-bit)",
                     session.DeviceName, format.SampleRate, format.Channels, format.BitsPerSample);
 
-                session.Run(cancellationToken, _wake, () => _paused, OnFrame);
+                session.Run(cancellationToken, _wake,
+                    () => _paused || RouteUnavailable || routeRevision != _virtualSpeaker.Revision, OnFrame);
                 _acceptFrames = false;
 
                 if (!cancellationToken.IsCancellationRequested && !_paused)
@@ -134,14 +158,14 @@ public sealed class AudioCaptureService : BackgroundService
 
     private void OnFrame(byte[] frame, float peak)
     {
-        if (!_acceptFrames || _paused) return;
+        if (!_acceptFrames || _paused || RouteUnavailable) return;
         _hub.OnAudioFrame(frame, peak);
     }
 
     private void RunDemo(CancellationToken cancellationToken)
     {
         const int sampleRate = 48000;
-        const int framesPerChunk = sampleRate / 50;
+        const int framesPerChunk = sampleRate / AudioLatency.PacketsPerSecond;
         const double twoPi = Math.PI * 2;
 
         _acceptFrames = true;
@@ -152,7 +176,7 @@ public sealed class AudioCaptureService : BackgroundService
 
         var chunk = new byte[framesPerChunk * 4];
         long frameIndex = 0;
-        var periodTicks = Math.Max(1, Stopwatch.Frequency / 50);
+        var periodTicks = Math.Max(1, Stopwatch.Frequency / AudioLatency.PacketsPerSecond);
         var nextTick = Stopwatch.GetTimestamp();
 
         while (!cancellationToken.IsCancellationRequested && !_paused)
@@ -192,7 +216,7 @@ public sealed class AudioCaptureService : BackgroundService
                 var remainingMs = (int)((nextTick - now) * 1000 / Stopwatch.Frequency);
                 if (remainingMs > 2)
                 {
-                    Wait(Math.Min(remainingMs - 1, 19), cancellationToken);
+                    Wait(Math.Min(remainingMs - 1, AudioLatency.PacketMilliseconds - 1), cancellationToken);
                 }
 
                 while (!cancellationToken.IsCancellationRequested && !_paused
@@ -225,6 +249,7 @@ public sealed class AudioCaptureService : BackgroundService
 
     public override void Dispose()
     {
+        _virtualSpeaker.RouteChanged -= RoutingChanged;
         _wake.Dispose();
         base.Dispose();
     }

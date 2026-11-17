@@ -1,7 +1,10 @@
+import './audio-latency.js?v=1.3.4';
+const latencyPolicy = globalThis.CXAudioLatency;
+
 /*
  * CX Audio — jitter-buffered PCM player.
  *
- * The server sends 20 ms chunks of interleaved little-endian Int16 stereo.
+ * The server sends up to 5 ms chunks of interleaved little-endian Int16 stereo.
  * A slow fractional resampler corrects clock drift between the Windows PC and
  * the listening device without audible pitch jumps.
  */
@@ -56,6 +59,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     this.playing = false;
     this.fade = 0;
     this.step = this.baseStep;
+    this.rateBias = 0;
     this.lastLeft = 0;
     this.lastRight = 0;
   }
@@ -86,6 +90,8 @@ class CxAudioProcessor extends AudioWorkletProcessor {
       case 'target':
         this.baseTargetMs = this.clampTarget(Number(message.targetMs) || this.baseTargetMs);
         this.targetMs = this.baseTargetMs;
+        this.boostMs = 0;
+        this.reset();
         break;
       case 'pause':
         this.paused = true;
@@ -103,7 +109,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
   }
 
   clampTarget(value) {
-    return Math.max(45, Math.min(1200, value));
+    return latencyPolicy.clampTarget(value);
   }
 
   writeAudio(buffer) {
@@ -114,10 +120,11 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     if (frames <= 0) return;
 
     let available = this.writePos - this.readPos;
-    const targetFrames = ((this.targetMs + 60 + this.boostMs) / 1000) * this.sourceRate;
-    const safetyCap = Math.min(this.ringFrames - frames, targetFrames + this.sourceRate * 0.35);
-    if (available > safetyCap) {
-      this.readPos = this.writePos - targetFrames;
+    const targetFrames = (latencyPolicy.effectiveTarget(this.targetMs, this.boostMs) / 1000) * this.sourceRate;
+    const safetyCap = Math.min(this.ringFrames - frames, targetFrames + this.sourceRate * latencyPolicy.backlogMs(this.baseTargetMs) / 1000);
+    if (available + frames > safetyCap) {
+      this.readPos = Math.max(this.readPos, Math.min(this.writePos, this.writePos + frames - targetFrames));
+      this.fade = 0;
       available = this.writePos - this.readPos;
       this.overruns += 1;
       this.boostMs = Math.max(0, this.boostMs - 20);
@@ -167,12 +174,10 @@ class CxAudioProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // A small fixed safety margin covers browser/audio-device scheduling
-    // variance. It is still well below the "stable" profile and removes the
-    // occasional one-block underrun that caused clicks on real hardware.
-    const effectiveTargetMs = Math.min(900, this.targetMs + 60 + this.boostMs);
+    // Low mode has a bounded jitter budget; no hidden safety/priming buffers.
+    const effectiveTargetMs = latencyPolicy.effectiveTarget(this.targetMs, this.boostMs);
     const targetFrames = (effectiveTargetMs / 1000) * this.sourceRate;
-    const primeFrames = targetFrames + this.sourceRate * 0.06;
+    const primeFrames = Math.max(targetFrames, this.sourceRate * 0.005 + frames * this.baseStep + 2);
     if (!this.primed) {
       if (this.writePos - this.readPos < primeFrames) {
         this.reportStats();
@@ -183,7 +188,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
       this.fade = 0;
     }
 
-    const fadeStep = 1 / Math.max(1, this.outputRate * 0.018);
+    const fadeStep = 1 / Math.max(1, this.outputRate * (this.baseTargetMs <= 30 ? 0.003 : 0.018));
     let underrun = false;
 
     for (let i = 0; i < frames; i += 1) {
@@ -201,7 +206,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
           left[i + j] = this.lastLeft * gain;
           if (right !== left) right[i + j] = this.lastRight * gain;
         }
-        this.boostMs = Math.min(180, this.boostMs + 35);
+        this.boostMs = latencyPolicy.increaseBoost(this.baseTargetMs, this.boostMs);
         break;
       }
 
@@ -227,8 +232,9 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     // Integral term learns the listening device's actual clock rate. A
     // proportional-only controller can leave the buffer permanently below
     // target on devices whose audio clock differs slightly from 48 kHz.
-    this.rateBias = Math.max(-0.03, Math.min(0.03, this.rateBias + error * 0.000018));
-    const correction = Math.max(-0.03, Math.min(0.03, error * 0.02 + this.rateBias));
+    const elapsed = frames / this.outputRate;
+    this.rateBias = Math.max(-0.005, Math.min(0.005, this.rateBias + error * elapsed * 0.0003));
+    const correction = Math.max(-0.01, Math.min(0.01, error * 0.002 + this.rateBias));
     this.step = this.baseStep * (1 + correction);
 
     this.reportStats();
@@ -243,7 +249,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     this.port.postMessage({
       type: 'stats',
       bufferMs: Math.round((bufferedFrames / this.sourceRate) * 1000),
-      targetMs: Math.round(Math.min(900, this.targetMs + 60 + this.boostMs)),
+      targetMs: Math.round(latencyPolicy.effectiveTarget(this.targetMs, this.boostMs)),
       underruns: this.underruns,
       overruns: this.overruns,
       playing: this.playing,

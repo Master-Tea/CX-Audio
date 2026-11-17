@@ -138,6 +138,7 @@ public sealed partial class MainWindow
         _settingsContent.Children.Add(new TextBlock { Text = "CX Audio · " + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? "1.3"), TextWrapping = TextWrapping.Wrap });
         _settingsInitializing = false;
 
+        InitializeVirtualSpeaker();
         UpdateOverview();
     }
 
@@ -286,6 +287,7 @@ public sealed partial class MainWindow
         {
             "connections" => typeof(ConnectionsPage),
             "android" => typeof(AndroidPage),
+            "virtual-speaker" => typeof(VirtualSpeakerPage),
             _ => typeof(OverviewPage)
         };
         if (ContentFrame.CurrentSourcePageType == page) return;

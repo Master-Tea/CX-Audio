@@ -348,7 +348,13 @@ public static class Endpoints
 
         var name = NetTools.SanitizeName(context.Request.Query["name"].ToString(), "未命名设备");
         var platform = NetTools.SanitizeName(context.Request.Query["platform"].ToString(), "浏览器", 24);
-        var wired = string.Equals(context.Request.Query["wired"].ToString(), "1", StringComparison.Ordinal);
+        var network = context.RequestServices.GetRequiredService<NetworkSelectionService>();
+        var localAddress = context.Connection.LocalIpAddress;
+        if (localAddress?.IsIPv4MappedToIPv6 == true) localAddress = localAddress.MapToIPv4();
+        var usbInterface = network.GetSnapshot().Adapters.Any(adapter => adapter.IsUsbTether &&
+            (adapter.Ipv4Addresses.Contains(localAddress!) || adapter.Ipv6Addresses.Contains(localAddress!)));
+        var wired = usbInterface || (NetTools.IsLocal(context) &&
+            string.Equals(context.Request.Query["wired"].ToString(), "1", StringComparison.Ordinal));
         var address = ip;
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync();

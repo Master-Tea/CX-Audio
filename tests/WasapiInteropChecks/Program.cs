@@ -32,6 +32,10 @@ try
     }
 
     Console.WriteLine("PASS: repeated device-name queries preserve the active endpoint.");
+    var outputs = new WindowsAudioRoutePlatform().GetOutputs();
+    if (outputs.Count == 0 || outputs.Any(output => string.IsNullOrWhiteSpace(output.Id)))
+        throw new InvalidOperationException("Output endpoint collection returned invalid device IDs.");
+    Console.WriteLine($"PASS: enumerated {outputs.Count} render endpoints with state and virtual driver detection (read-only).");
 }
 finally
 {

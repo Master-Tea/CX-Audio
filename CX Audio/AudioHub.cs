@@ -23,8 +23,11 @@ public sealed record ReceiverSnapshot(
 
 public sealed class ReceiverSession : IAsyncDisposable
 {
-    private readonly Channel<OutboundMessage> _outbox;
+    private readonly Channel<string> _control;
+    private readonly Channel<PendingAudio> _audio;
+    private readonly SemaphoreSlim _sendReady = new(0, 1);
     private readonly CancellationTokenSource _cts = new();
+    private int _audioQueueMilliseconds = 1000;
     private readonly object _sync = new();
     private readonly ILogger _logger;
     private Task? _sendTask;
@@ -51,12 +54,16 @@ public sealed class ReceiverSession : IAsyncDisposable
         _logger = logger;
         Id = Guid.NewGuid().ToString("N")[..10];
         ConnectedAt = DateTimeOffset.UtcNow;
-        _outbox = Channel.CreateBounded<OutboundMessage>(new BoundedChannelOptions(96)
+        _control = Channel.CreateBounded<string>(new BoundedChannelOptions(64)
         {
             SingleReader = true,
-            SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest
         });
+        _audio = Channel.CreateBounded<PendingAudio>(new BoundedChannelOptions(12)
+        {
+            SingleReader = true,
+            FullMode = BoundedChannelFullMode.DropOldest
+        }, _ => Interlocked.Increment(ref _dropped));
     }
 
     public string Id { get; }
@@ -83,20 +90,27 @@ public sealed class ReceiverSession : IAsyncDisposable
         Interlocked.Exchange(ref _lastSeenTicks, DateTime.UtcNow.Ticks);
     }
 
+    public void ConfigureLatency(string profile) => Volatile.Write(ref _audioQueueMilliseconds,
+        profile == "low" ? (Wired ? 10 : 25) : 1000);
+
     public void EnqueueJson(string json)
     {
-        _outbox.Writer.TryWrite(new OutboundMessage(null, json));
+        if (_control.Writer.TryWrite(json)) WakeSender();
     }
 
     public void EnqueueAudio(byte[] frame)
     {
-        if (_outbox.Reader.Count > 70)
-        {
-            Interlocked.Increment(ref _dropped);
-        }
-
-        _outbox.Writer.TryWrite(new OutboundMessage(frame, null));
+        if (_audio.Writer.TryWrite(new PendingAudio(frame, System.Diagnostics.Stopwatch.GetTimestamp())))
+            WakeSender();
     }
+
+    private void WakeSender()
+    {
+        try { _sendReady.Release(); }
+        catch (SemaphoreFullException) { /* A wake-up is already pending. */ }
+    }
+
+    private readonly record struct PendingAudio(byte[] Data, long CreatedAt);
 
     public void UpdateStats(int bufferMs, string? playback, long underruns, long overruns)
     {
@@ -167,18 +181,24 @@ public sealed class ReceiverSession : IAsyncDisposable
     {
         try
         {
-            await foreach (var message in _outbox.Reader.ReadAllAsync(_cts.Token))
+            while (!_cts.IsCancellationRequested && Socket.State == WebSocketState.Open)
             {
-                if (Socket.State != WebSocketState.Open) break;
+                await _sendReady.WaitAsync(_cts.Token);
+                while (_control.Reader.TryRead(out var json))
+                    await Socket.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, _cts.Token);
 
-                if (message.Binary is not null)
+                while (_audio.Reader.TryRead(out var audio))
                 {
-                    await Socket.SendAsync(message.Binary, WebSocketMessageType.Binary, true, _cts.Token);
-                }
-                else if (message.Text is not null)
-                {
-                    var bytes = Encoding.UTF8.GetBytes(message.Text);
-                    await Socket.SendAsync(bytes, WebSocketMessageType.Text, true, _cts.Token);
+                    // Controls never wait behind PCM; discard stale audio after a network stall.
+                    while (_control.Reader.TryRead(out var json))
+                        await Socket.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, _cts.Token);
+                    if (System.Diagnostics.Stopwatch.GetElapsedTime(audio.CreatedAt).TotalMilliseconds >
+                        Volatile.Read(ref _audioQueueMilliseconds))
+                    {
+                        Interlocked.Increment(ref _dropped);
+                        continue;
+                    }
+                    await Socket.SendAsync(audio.Data, WebSocketMessageType.Binary, true, _cts.Token);
                 }
             }
         }
@@ -203,7 +223,8 @@ public sealed class ReceiverSession : IAsyncDisposable
     public async Task CloseAsync(int code, string reason)
     {
         if (Interlocked.Exchange(ref _closed, 1) != 0) return;
-        _outbox.Writer.TryComplete();
+        _control.Writer.TryComplete();
+        _audio.Writer.TryComplete();
         try
         {
             if (Socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
@@ -386,9 +407,10 @@ public sealed class AudioHub
         ILogger logger, bool wired = false)
     {
         var session = new ReceiverSession(socket, name, platform, address, logger, wired);
+        session.ConfigureLatency(_state.Profile);
         _receivers[session.Id] = session;
-        session.Start();
         session.EnqueueJson(BuildHello(session));
+        session.Start();
         _logger.LogInformation("Receiver connected: {Name} ({Platform}) from {Address}{Wired}",
             name, platform, address, wired ? " over USB" : string.Empty);
         _ = BroadcastStateAsync();
@@ -449,18 +471,16 @@ public sealed class AudioHub
 
     public void NotifyStream(bool playing, string? reason)
     {
-        var json = JsonSerializer.Serialize(new
-        {
-            type = "stream",
-            playing,
-            reason,
-            profile = _state.Profile,
-            targetMs = _state.TargetMs
-        }, JsonOptions);
-
         foreach (var receiver in _receivers.Values)
         {
-            receiver.EnqueueJson(json);
+            receiver.EnqueueJson(JsonSerializer.Serialize(new
+            {
+                type = "stream",
+                playing,
+                reason,
+                profile = _state.Profile,
+                targetMs = AudioLatency.TargetMilliseconds(_state.Profile, receiver.Wired)
+            }, JsonOptions));
         }
     }
 
@@ -481,16 +501,15 @@ public sealed class AudioHub
     public void SetProfile(string profile)
     {
         _state.SetProfile(profile);
-        var json = JsonSerializer.Serialize(new
-        {
-            type = "profile",
-            profile = _state.Profile,
-            targetMs = _state.TargetMs
-        }, JsonOptions);
-
         foreach (var receiver in _receivers.Values)
         {
-            receiver.EnqueueJson(json);
+            receiver.ConfigureLatency(_state.Profile);
+            receiver.EnqueueJson(JsonSerializer.Serialize(new
+            {
+                type = "profile",
+                profile = _state.Profile,
+                targetMs = AudioLatency.TargetMilliseconds(_state.Profile, receiver.Wired)
+            }, JsonOptions));
         }
 
         _ = BroadcastStateAsync();
@@ -585,7 +604,7 @@ public sealed class AudioHub
         }
 
         var stale = _receivers.Values
-            .Where(r => DateTime.UtcNow - r.LastSeen > TimeSpan.FromSeconds(18))
+            .Where(r => DateTime.UtcNow - r.LastSeen > TimeSpan.FromSeconds(120))
             .ToList();
 
         foreach (var receiver in stale)
@@ -689,10 +708,10 @@ public sealed class AudioHub
             sampleRate = capture.SampleRate > 0 ? capture.SampleRate : 48000,
             channels = 2,
             bitDepth = 16,
-            frameMs = 20,
+            frameMs = AudioLatency.PacketMilliseconds,
             serverName = _state.ServerName,
             profile = _state.Profile,
-            targetMs = _state.TargetMs,
+            targetMs = AudioLatency.TargetMilliseconds(_state.Profile, receiver.Wired),
             masterVolume = _state.MasterVolume,
             muted = _state.Muted,
             playing,
@@ -719,5 +738,3 @@ public sealed class AudioHub
     }
 
 }
-
-public readonly record struct OutboundMessage(byte[]? Binary, string? Text);

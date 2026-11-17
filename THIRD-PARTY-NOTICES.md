@@ -2,6 +2,14 @@
 
 CX Audio Output includes the following third-party components and assets.
 
+## VB-CABLE (optional external driver)
+
+The advanced virtual speaker mode integrates with VB-CABLE by VB-Audio / Vincent Burel. VB-CABLE is third-party Donationware and is not covered by CX Audio's MIT license. Its driver binaries are not bundled in this repository or CX Audio release packages. On an explicit installation request, CX Audio downloads the official Pack43 archive, checks its SHA256, verifies the Windows installer signature and publisher, and opens the vendor's installer. Installation and use are subject to VB-Audio's terms.
+
+- Product and download: https://vb-audio.com/Cable/
+- Licensing: https://vb-audio.com/Services/licensing.htm
+- Official Pack43 SHA256: `66fd0a4d9f4896ff41632b7e3d53892c085c4561f53e8ae8d0f0bc10eedd1cdd`
+
 ## .NET 8 / ASP.NET Core
 
 - Project: https://github.com/dotnet/aspnetcore

@@ -123,12 +123,7 @@ public sealed class AppState
     public string VersionString => typeof(AppState).Assembly.GetName().Version is { } version
         ? $"{version.Major}.{version.Minor}.{version.Build}" : string.Empty;
 
-    public static int TargetMilliseconds(string profile) => profile switch
-    {
-        "low" => 120,
-        "stable" => 450,
-        _ => 240
-    };
+    public static int TargetMilliseconds(string profile) => AudioLatency.TargetMilliseconds(profile);
 
     public void SetMasterVolume(int volume)
     {

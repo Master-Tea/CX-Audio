@@ -67,7 +67,7 @@
                             <TextBlock x:Name="LatencyText" Grid.Column="1" Text="180 ms" FontFamily="{StaticResource DisplayFont}" FontSize="11" Foreground="{ThemeResource TextPrimaryBrush}" x:FieldModifier="internal"/>
                         </Grid>
                         <ComboBox x:Name="LatencyComboBox" HorizontalAlignment="Stretch" AutomationProperties.Name="延迟配置" SelectionChanged="Latency_SelectionChanged" x:FieldModifier="internal">
-                            <ComboBoxItem Content="低延迟 · 120 ms" Tag="low"/>
+                            <ComboBoxItem Content="低延迟 · USB 6 / 无线 30 ms" Tag="low"/>
                             <ComboBoxItem Content="均衡 · 240 ms" Tag="balanced"/>
                             <ComboBoxItem Content="稳定 · 450 ms" Tag="stable"/>
                         </ComboBox>

@@ -28,6 +28,7 @@ internal sealed class WasapiLoopbackSession : IDisposable
     private bool _eventDriven;
     private bool _started;
     private string _deviceId = string.Empty;
+    private string? _requestedDeviceId;
     private SourceFormat _format = new(48000, 2, 32, true, 8, 4);
     private byte[] _chunk = Array.Empty<byte>();
     private int _chunkFill;
@@ -45,9 +46,9 @@ internal sealed class WasapiLoopbackSession : IDisposable
     public SourceFormat Format => _format;
     public long FramesDelivered => Interlocked.Read(ref _framesDelivered);
 
-    public static WasapiLoopbackSession Create()
+    public static WasapiLoopbackSession Create(string? endpointId = null)
     {
-        var session = new WasapiLoopbackSession();
+        var session = new WasapiLoopbackSession { _requestedDeviceId = endpointId };
         try
         {
             session.Initialize();
@@ -65,7 +66,10 @@ internal sealed class WasapiLoopbackSession : IDisposable
         var enumeratorObject = new WasapiInterop.MmDeviceEnumeratorComObject();
         _enumerator = (IMMDeviceEnumerator)enumeratorObject;
 
-        var hr = _enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Console, out var device);
+        IMMDevice device;
+        var hr = _requestedDeviceId is null
+            ? _enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Console, out device)
+            : _enumerator.GetDevice(_requestedDeviceId, out device);
         if (hr != 0)
         {
             var noDevice = hr is unchecked((int)0x80070490) or unchecked((int)0x80070002)
@@ -83,7 +87,7 @@ internal sealed class WasapiLoopbackSession : IDisposable
         DeviceName = GetFriendlyName(device);
         _format = ActivateAndGetFormat(device);
 
-        _chunk = new byte[Math.Max(1, _format.SampleRate / 50) * 4];
+        _chunk = new byte[Math.Max(1, _format.SampleRate / AudioLatency.PacketsPerSecond) * 4];
         _scratch = new byte[8192];
 
         if (!TryInitializeEventDriven())
@@ -137,7 +141,7 @@ internal sealed class WasapiLoopbackSession : IDisposable
         var hr = _audioClient!.Initialize(
             AudioClientShareMode.Shared,
             AudioClientStreamFlags.Loopback | AudioClientStreamFlags.EventCallback,
-            1_000_000,
+            0, // Shared-mode minimum buffer; the device still controls its engine period.
             0,
             _mixFormat,
             IntPtr.Zero);
@@ -176,7 +180,7 @@ internal sealed class WasapiLoopbackSession : IDisposable
         hr = _audioClient.Initialize(
             AudioClientShareMode.Shared,
             AudioClientStreamFlags.Loopback,
-            1_000_000,
+            0, // Shared-mode minimum buffer; the device still controls its engine period.
             0,
             _mixFormat,
             IntPtr.Zero);
@@ -214,13 +218,13 @@ internal sealed class WasapiLoopbackSession : IDisposable
 
             if (_eventDriven)
             {
-                var index = WaitHandle.WaitAny(waitHandles, 25);
+                var index = WaitHandle.WaitAny(waitHandles, AudioLatency.PacketMilliseconds);
                 if (index == 1 && (cancellationToken.IsCancellationRequested || isPaused()))
                 {
                     break;
                 }
             }
-            else if (wakeEvent.WaitOne(5))
+            else if (wakeEvent.WaitOne(2))
             {
                 if (cancellationToken.IsCancellationRequested || isPaused())
                 {
@@ -229,7 +233,9 @@ internal sealed class WasapiLoopbackSession : IDisposable
             }
 
             Drain(onFrame);
+            PublishChunk();
             FillSilenceIfIdle();
+            PublishChunk();
 
             var now = Stopwatch.GetTimestamp();
             if ((now - _lastDeviceCheckTicks) / (double)Stopwatch.Frequency >= 2.0)
@@ -247,6 +253,11 @@ internal sealed class WasapiLoopbackSession : IDisposable
 
     private bool DefaultOutputChanged()
     {
+        if (_requestedDeviceId is not null)
+        {
+            // Advanced mode must never fall back to a physical/default endpoint.
+            return _device is null || _device.GetState(out var state) != 0 || (state & 1) == 0;
+        }
         if (_enumerator is null || string.IsNullOrEmpty(_deviceId)) return false;
         var hr = _enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Console, out var current);
         if (hr != 0 || current is null) return false;
@@ -482,7 +493,7 @@ internal sealed class WasapiLoopbackSession : IDisposable
         }
 
         var peak = Math.Clamp(_chunkPeak, 0f, 1f);
-        _chunk = new byte[Math.Max(1, _format.SampleRate / 50) * 4];
+        _chunk = new byte[Math.Max(1, _format.SampleRate / AudioLatency.PacketsPerSecond) * 4];
         _chunkFill = 0;
         _chunkPeak = 0;
         Interlocked.Add(ref _framesDelivered, frame.Length / 4);

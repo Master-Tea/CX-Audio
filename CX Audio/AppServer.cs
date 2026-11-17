@@ -28,6 +28,9 @@ public sealed class AppServer : IAsyncDisposable
             kestrel.ListenAnyIP(options.Port);
         });
 
+        builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions>(
+            transport => transport.NoDelay = true);
+
         builder.Logging.ClearProviders();
         builder.Logging.SetMinimumLevel(LogLevel.Information);
         builder.Logging.AddProvider(new FileLoggerProvider(AppPaths.LogFile));
@@ -40,6 +43,8 @@ public sealed class AppServer : IAsyncDisposable
         builder.Services.AddSingleton<AndroidWiredService>();
         builder.Services.AddSingleton<AudioHub>();
         builder.Services.AddSingleton<AccessGuard>();
+        builder.Services.AddSingleton<VirtualSpeakerService>();
+        builder.Services.AddHostedService(provider => provider.GetRequiredService<VirtualSpeakerService>());
         builder.Services.AddSingleton<AudioCaptureService>();
         builder.Services.AddHostedService(provider => provider.GetRequiredService<AudioCaptureService>());
         builder.Services.AddHostedService<StateBroadcaster>();
@@ -137,6 +142,7 @@ public sealed class AppServer : IAsyncDisposable
         Android = _app.Services.GetRequiredService<AndroidWiredService>();
         Capture = _app.Services.GetRequiredService<AudioCaptureService>();
         Settings = _app.Services.GetRequiredService<AppSettingsStore>();
+        VirtualSpeaker = _app.Services.GetRequiredService<VirtualSpeakerService>();
     }
 
     public LaunchOptions Options { get; }
@@ -146,6 +152,7 @@ public sealed class AppServer : IAsyncDisposable
     public AndroidWiredService Android { get; }
     public AudioCaptureService Capture { get; }
     public AppSettingsStore Settings { get; }
+    public VirtualSpeakerService VirtualSpeaker { get; }
     public string LocalStudioUrl => $"http://127.0.0.1:{Options.Port}/studio";
     public string LogFilePath => AppPaths.LogFile;
 
