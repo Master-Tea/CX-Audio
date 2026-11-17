@@ -20,8 +20,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>1.4.0</Version>
-    <FileVersion>1.4.0.0</FileVersion>
+    <Version>1.4.1</Version>
+    <FileVersion>1.4.1.0</FileVersion>
     <Product>CX Audio</Product>
     <Company>MasterTea</Company>
     <Authors>MasterTea</Authors>
@@ -33,6 +33,11 @@
     <DefaultLanguage>zh-CN</DefaultLanguage>
     <SatelliteResourceLanguages>zh-CN;zh-Hans;en-US</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <!-- Packaged self-contained WinUI requires package-level WinRT registrations. -->
+  <ItemGroup Condition="'$(CXAudioPackageManifest)' != '' and '$(WindowsPackageType)' != 'None'">
+    <AppxManifest Include="$(CXAudioPackageManifest)" />
+  </ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

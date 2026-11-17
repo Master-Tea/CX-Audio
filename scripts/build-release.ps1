@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.4.0',
+    [string]$Version = '1.4.1',
     [switch]$SkipMsix
 )
 
@@ -26,9 +26,11 @@ $zip = Join-Path $releaseRoot "CXAudioOutput-$Version-win-x64.zip"
 Compress-Archive -Path (Join-Path $publishRoot '*') -DestinationPath $zip -CompressionLevel Optimal -Force
 $deliverables = @($zip)
 if (-not $SkipMsix) {
-    & (Join-Path $PSScriptRoot 'build-msix.ps1') -Version "$Version.0"
+    [xml]$packageXml = Get-Content -LiteralPath (Join-Path $repoRoot 'CX Audio\Package.appxmanifest') -Raw -Encoding UTF8
+    $packageVersion = [string]$packageXml.Package.Identity.Version
+    & (Join-Path $PSScriptRoot 'build-msix.ps1') -Version $packageVersion
     if ($LASTEXITCODE -ne 0) { throw 'MSIX build did not complete.' }
-    foreach ($name in @("CXAudioOutput_$Version.0_x64.msix", 'MasterTea-CXAudio.cer')) {
+    foreach ($name in @("CXAudioOutput_${packageVersion}_x64.msix", 'MasterTea-CXAudio.cer')) {
         $destination = Join-Path $releaseRoot $name
         Copy-Item -LiteralPath (Join-Path $repoRoot "dist\msix\$name") -Destination $destination -Force
         $deliverables += $destination

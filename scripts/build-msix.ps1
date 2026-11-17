@@ -2,7 +2,7 @@
 param(
     [string]$Configuration = 'Release',
     [string]$Platform = 'x64',
-    [string]$Version = '1.4.0.0',
+    [string]$Version = '1.4.1.1',
     [string]$CertificateThumbprint = '4C800525ACB48750E0B613F0A1EA4AD3D719A476',
     [string]$CertificatePath = '',
     [string]$CertificatePassword = ''
@@ -49,9 +49,38 @@ if (-not (Test-Path -LiteralPath $project)) { throw "Project file not found: $pr
 
 New-Item -ItemType Directory -Path $packageBuildRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $packageOutput -Force | Out-Null
+# Unpackaged registration-free WinRT ignores package identity. Installed apps
+# instead resolve WinRT classes from AppxManifest, so register the exact SDK
+# components restored for this project in the package manifest as well.
+$assets = Get-Content -LiteralPath (Join-Path $repoRoot 'CX Audio\obj\project.assets.json') -Raw | ConvertFrom-Json
+$packageManifest = Join-Path $packageBuildRoot 'Package.appxmanifest'
+$manifestNamespace = 'http://schemas.microsoft.com/appx/manifest/foundation/windows10'
+$extensions = $manifest.CreateElement('Extensions', $manifestNamespace)
+$registeredClasses = @{}
+foreach ($library in $assets.libraries.PSObject.Properties) {
+    if ($library.Name -notlike 'Microsoft.WindowsAppSDK.*/*') { continue }
+    foreach ($folder in $assets.packageFolders.PSObject.Properties.Name) {
+        $fragmentPath = Join-Path (Join-Path $folder $library.Value.path) 'runtimes-framework\package.appxfragment'
+        if (-not (Test-Path -LiteralPath $fragmentPath)) { continue }
+        [xml]$fragment = Get-Content -LiteralPath $fragmentPath -Raw -Encoding UTF8
+        foreach ($extension in $fragment.Fragment.Extensions.Extension) {
+            $extensions.AppendChild($manifest.ImportNode($extension, $true)) | Out-Null
+            foreach ($class in $extension.InProcessServer.ActivatableClass) {
+                $registeredClasses[$class.ActivatableClassId] = $true
+            }
+        }
+        break
+    }
+}
+foreach ($requiredClass in @('Microsoft.UI.Xaml.Application', 'Microsoft.Windows.ApplicationModel.Resources.ResourceManager')) {
+    if (-not $registeredClasses.ContainsKey($requiredClass)) { throw "Missing SDK activation registration: $requiredClass" }
+}
+$manifest.Package.AppendChild($extensions) | Out-Null
+$manifest.Save($packageManifest)
 $buildArguments = @(
     'build', $project, '-c', $Configuration, "-p:Platform=$Platform",
     '-p:EnableMsixTooling=true', '-p:WindowsPackageType=MSIX',
+    "-p:CXAudioPackageManifest=$packageManifest",
     '-p:GenerateAppxPackageOnBuild=true', '-p:AppxPackageSigningEnabled=false',
     "-p:AppxPackageDir=$packageDirectory/",
     '-p:DebugType=None', '-p:DebugSymbols=false', '-p:NuGetAudit=false', '--no-restore'
@@ -63,6 +92,19 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCO
 $unsignedPackage = Get-ChildItem -LiteralPath $packageDirectory -Recurse -File -Filter '*.msix' |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($null -eq $unsignedPackage) { throw "No MSIX package was produced under $packageDirectory" }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$packageArchive = [System.IO.Compression.ZipFile]::OpenRead($unsignedPackage.FullName)
+try {
+    $entry = $packageArchive.GetEntry('AppxManifest.xml')
+    $reader = [System.IO.StreamReader]::new($entry.Open())
+    try { [xml]$builtManifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
+    if ($builtManifest.Package.Identity.Version -ne $Version) { throw 'Built MSIX version does not match the requested release filename.' }
+    foreach ($requiredClass in @('Microsoft.UI.Xaml.Application', 'Microsoft.Windows.ApplicationModel.Resources.ResourceManager')) {
+        $found = $builtManifest.SelectNodes('//*[local-name()="ActivatableClass"]') | Where-Object { $_.ActivatableClassId -eq $requiredClass }
+        if (-not $found) { throw "Built MSIX is missing required activation registration: $requiredClass" }
+    }
+}
+finally { $packageArchive.Dispose() }
 $msixName = "CXAudioOutput_${Version}_x64.msix"
 $msixPath = Join-Path $packageOutput $msixName
 Copy-Item -LiteralPath $unsignedPackage.FullName -Destination $msixPath -Force

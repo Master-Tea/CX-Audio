@@ -17,13 +17,24 @@ internal static class Program
             return;
         }
 
-        WinRT.ComWrappersSupport.InitializeComWrappers();
-        Application.Start(parameters =>
+        AppDomain.CurrentDomain.UnhandledException += (_, error) =>
+            StartupTrace.Write("Unhandled process exception: " + error.ExceptionObject);
+        try
         {
-            SynchronizationContext.SetSynchronizationContext(
-                new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
-            _ = new App();
-        });
+            StartupTrace.Write("Main: initializing WinUI");
+            WinRT.ComWrappersSupport.InitializeComWrappers();
+            Application.Start(parameters =>
+            {
+                SynchronizationContext.SetSynchronizationContext(
+                    new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
+                _ = new App();
+            });
+        }
+        catch (Exception error)
+        {
+            StartupTrace.Write("Startup failed: " + error);
+            throw;
+        }
     }
 
     private static void RunRouteGuard(string[] args)

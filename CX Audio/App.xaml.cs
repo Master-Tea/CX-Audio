@@ -8,6 +8,8 @@ public partial class App : Application
 
     public App()
     {
+        StartupTrace.Write("App constructor: entered");
+        UnhandledException += (_, error) => StartupTrace.Write("Unhandled XAML exception: " + error.Exception);
         // Resolve WinUI's own labels in Chinese even on an English Windows install.
         Microsoft.Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = "zh-CN";
         System.Globalization.CultureInfo.DefaultThreadCurrentUICulture =

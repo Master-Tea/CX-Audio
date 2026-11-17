@@ -150,14 +150,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 输出文件：
 
-- `dist\msix\CXAudioOutput_1.4.0.0_x64.msix`
+- `dist\msix\CXAudioOutput_1.4.1.1_x64.msix`
 - `dist\msix\MasterTea-CXAudio.cer`
 
 安装前先信任本次构建使用的自签名证书，再安装 MSIX：
 
 ```powershell
 Import-Certificate .\MasterTea-CXAudio.cer -CertStoreLocation Cert:\CurrentUser\Root
-Add-AppxPackage .\CXAudioOutput_1.4.0.0_x64.msix
+Add-AppxPackage .\CXAudioOutput_1.4.1.1_x64.msix
 ```
 
 安装包信息：
@@ -165,7 +165,7 @@ Add-AppxPackage .\CXAudioOutput_1.4.0.0_x64.msix
 ```text
 Publisher : MasterTea
 Identity  : MasterTea.CXAudio
-Version   : 1.4.0.0
+Version   : 1.4.1.1
 Arch      : x64
 Signature : SHA256 self-signed certificate
 ```
@@ -403,7 +403,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\build-release.ps1
 ```
 
-输出到 `dist\release\v1.4.0`：自包含 x64 ZIP、沿用原证书签名的 MSIX、公开证书、`Install-CXAudio.ps1`、发布说明和 `SHA256SUMS.txt`。驱动由用户首次使用高级模式时从 VB-Audio 官网另行安装。脚本会同步复制新生成的 XBF 与资源索引，避免发布目录残留旧侧边栏。
+输出到 `dist\release\v1.4.1`：自包含 x64 ZIP、沿用原证书签名的 MSIX、公开证书、`Install-CXAudio.ps1`、发布说明和 `SHA256SUMS.txt`。驱动由用户首次使用高级模式时从 VB-Audio 官网另行安装。脚本会同步复制新生成的 XBF 与资源索引，避免发布目录残留旧侧边栏。
 
 ### 打包 MSIX
 
@@ -413,7 +413,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 脚本启用项目 MSIX 工具链，生成自包含 x64 包，并使用 Windows SDK 的 `signtool` 签名。脚本默认按既有 thumbprint 从当前用户证书库读取原证书；找不到原证书或私钥时会直接停止，绝不会生成新的签名证书。也可以通过 `-CertificatePath` 和 `-CertificatePassword` 指向原始 PFX，脚本会校验 thumbprint 和清单发布者后再签名。
 
-输出：`dist\msix\CXAudioOutput_1.4.0.0_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
+输出：`dist\msix\CXAudioOutput_1.4.1.1_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
 
 ## 故障排查
 
