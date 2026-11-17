@@ -193,10 +193,10 @@ test('Fluent pages preserve audio control and live desktop appearance', { timeou
     await until(() => hostState?.profile === 'low', 'Fluent latency profile control');
     await until(() => wiredProfile?.targetMs === 6, 'USB receives its 6 ms target');
     await receiver.locator('#details-button').click();
-    await receiver.waitForFunction(() => /缓冲目标 (3\d|40) ms/.test(document.querySelector('#detail-profile').textContent));
+    await receiver.waitForFunction(() => /缓冲目标 (3\d|[4-7]\d|80) ms/.test(document.querySelector('#detail-profile').textContent));
     await receiver.locator('#close-details').click();
     await compatibility.locator('#details-button').click();
-    await compatibility.waitForFunction(() => /缓冲目标 (3\d|40) ms/.test(document.querySelector('#detail-profile').textContent));
+    await compatibility.waitForFunction(() => /缓冲目标 (3\d|[4-7]\d|80) ms/.test(document.querySelector('#detail-profile').textContent));
     await compatibility.locator('#close-details').click();
     await until(() => hostState?.receivers?.some(item => item.name === 'HTTP 兼容模式测试' && item.playback === 'playing'),
       'HTTP compatibility renderer produces audio in low mode');

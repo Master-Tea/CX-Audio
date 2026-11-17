@@ -101,9 +101,11 @@ dotnet run --project .\tests\WasapiInteropChecks\WasapiInteropChecks.csproj
 
 ## 最低延迟与后台在线
 
-选择“低延迟”后，电脑端按最多 5 ms 的 PCM 音频分包发送；USB 接收缓冲目标为 6 ms，无线为 30 ms。ADB localhost 与已识别的 USB 网络共享网卡使用 USB 目标。AudioWorklet 不再附加固定的 60 ms 安全缓冲和 60 ms 启播缓冲；局域网 HTTP 的 ScriptProcessor 兼容模式优先使用 256 帧回调，失败时回退到 512 / 1024 帧。发生欠载时，低延迟档的自适应目标最多升至 USB 8 ms、无线 40 ms；旧音频会在网络恢复后被丢弃，以避免积压重播。均衡和稳定档的基础目标仍为 240 / 450 ms。
+选择“低延迟”后，电脑端按最多 5 ms 的 PCM 音频分包发送；USB 基础接收缓冲目标为 6 ms，无线为 30 ms。ADB localhost 与已识别的 USB 网络共享网卡使用 USB 目标。AudioWorklet 不附加固定的 60 ms 安全缓冲和 60 ms 启播缓冲；局域网 HTTP 的 ScriptProcessor 兼容模式优先使用 512 帧回调，失败时回退到 1024 / 256 帧，降低主线程回调压力。
 
-**USB 15 ms 内、无线 60 ms 内是端到端优化目标，尚非真实手机声学测量结果。** 自动化测试运行实际播放器代码，以 PCM 脉冲检查缓冲与渲染延迟，并覆盖 44.1 / 48 / 96 kHz、Windows 10 ms 批量交付和断流恢复；这些测试不包含 Windows 音频设备、真实网络和手机扬声器的延迟。接收端“连接详情”分别显示当前缓冲、缓冲目标和浏览器报告的输出延迟；浏览器报告也不等于完整端到端延迟。设备引擎周期、Wi-Fi 抖动、浏览器兼容回退及蓝牙输出都可能影响最终结果。
+1.4.3 按实际到包间隔和批量交付大小调整缓冲，不再把普通批量到包误当积压丢弃，也不再在丢积压时清除抗抖动余量。低延迟档的自适应目标上限为 USB 24 ms、无线 80 ms；持续稳定 10 秒后每约 2 秒减少 1 ms 的临时余量。兼容模式还受浏览器回调块大小限制。超过保护预算的长断流仍可能中断；恢复时修剪过旧积压，避免延迟持续累加。均衡和稳定档的基础目标仍为 240 / 450 ms。
+
+**USB 15 ms 内、无线 60 ms 内是良好链路下的优化目标，尚非真实手机声学测量结果；发生抖动时会为连续播放临时增加缓冲。** 自动化测试运行实际播放器代码，以 PCM 脉冲检查缓冲与渲染延迟，并覆盖 44.1 / 48 / 96 kHz、10 / 15 / 45 ms 批量交付、±1000 ppm 时钟偏差、缓冲回落和断流恢复；这些测试不包含 Windows 音频设备、真实网络和手机扬声器的延迟。接收端“连接详情”分别显示当前缓冲、缓冲目标和浏览器报告的输出延迟；浏览器报告也不等于完整端到端延迟。设备引擎周期、Wi-Fi 抖动、浏览器兼容回退及蓝牙输出都可能影响最终结果。
 
 接收端连接后固定启用后台保活，迁移并覆盖旧的关闭偏好。暂停串流、媒体控制暂停、静音和无信号时仍保持音频上下文、保活媒体和网络连接；心跳超时放宽至 120 秒，浏览器恢复执行后会检查连接并自动重连。明确断开连接时释放资源。“屏幕常亮”仍可独立选择。
 
@@ -150,14 +152,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 输出文件：
 
-- `dist\msix\CXAudioOutput_1.4.2.2_x64.msix`
+- `dist\msix\CXAudioOutput_1.4.3.0_x64.msix`
 - `dist\msix\MasterTea-CXAudio.cer`
 
 安装前先信任本次构建使用的自签名证书，再安装 MSIX：
 
 ```powershell
 Import-Certificate .\MasterTea-CXAudio.cer -CertStoreLocation Cert:\CurrentUser\Root
-Add-AppxPackage .\CXAudioOutput_1.4.2.2_x64.msix
+Add-AppxPackage .\CXAudioOutput_1.4.3.0_x64.msix
 ```
 
 安装包信息：
@@ -165,7 +167,7 @@ Add-AppxPackage .\CXAudioOutput_1.4.2.2_x64.msix
 ```text
 Publisher : MasterTea
 Identity  : MasterTea.CXAudio
-Version   : 1.4.2.2
+Version   : 1.4.3.0
 Arch      : x64
 Signature : SHA256 self-signed certificate
 ```
@@ -244,11 +246,11 @@ Android 手机可以用 USB 数据线连接电脑，不经过 Wi-Fi。原生控�
 - 点击“开始聆听”后浏览器才允许播放声音（自动播放策略要求一次用户手势）。
 - 支持音量、静音、全屏、后台播放、屏幕常亮、连接详情和断线重连。
 - 延迟配置：
-  - 低延迟：目标缓冲 120 ms
+  - 低延迟：基础目标缓冲 USB 6 ms / 无线 30 ms，按抖动自适应
   - 均衡：目标缓冲 240 ms（默认，稳定性更好）
   - 稳定：目标缓冲 450 ms
 - 兼容模式会显示“兼容模式”标签；音质和缓冲逻辑与 Worklet 模式一致，但由主线程处理音频，CPU 占用略高。
-- 兼容模式与 AudioWorklet 都会额外增加约 60 ms 的安全缓冲，欠载后会自动再提高目标缓冲，优先保证连续播放。
+- 兼容模式与 AudioWorklet 都会根据实际批量到包和欠载情况调整缓冲；低延迟档不附加固定的 60 ms 安全缓冲，目标以接收端连接详情显示值为准。
 - 有线连接时，播放页和“连接详情”会显示“USB 有线”；ADB 通道会优先使用 AudioWorklet。
 
 ## 后台与熄屏播放
@@ -403,7 +405,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\build-release.ps1
 ```
 
-输出到 `dist\release\v1.4.2`：自包含 x64 ZIP、沿用原证书签名的 MSIX、公开证书、`Install-CXAudio.ps1`、发布说明和 `SHA256SUMS.txt`。驱动由用户首次使用高级模式时从 VB-Audio 官网另行安装。脚本会同步复制新生成的 XBF 与资源索引，避免发布目录残留旧侧边栏。
+输出到 `dist\release\v1.4.3`：自包含 x64 ZIP、沿用原证书签名的 MSIX、公开证书、`Install-CXAudio.ps1`、发布说明和 `SHA256SUMS.txt`。驱动由用户首次使用高级模式时从 VB-Audio 官网另行安装。脚本会同步复制新生成的 XBF 与资源索引，避免发布目录残留旧侧边栏。
 
 ### 打包 MSIX
 
@@ -413,7 +415,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 脚本启用项目 MSIX 工具链，生成自包含 x64 包，并使用 Windows SDK 的 `signtool` 签名。脚本默认按既有 thumbprint 从当前用户证书库读取原证书；找不到原证书或私钥时会直接停止，绝不会生成新的签名证书。也可以通过 `-CertificatePath` 和 `-CertificatePassword` 指向原始 PFX，脚本会校验 thumbprint 和清单发布者后再签名。
 
-输出：`dist\msix\CXAudioOutput_1.4.2.2_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
+输出：`dist\msix\CXAudioOutput_1.4.3.0_x64.msix` 与 `dist\msix\MasterTea-CXAudio.cer`。应用清单位于 `CX Audio/Package.appxmanifest`，原始透明图标为 `CX Audio/Assets/logo.png`，图标生成脚本为 `scripts/generate-msix-assets.py`。
 
 ## 故障排查
 

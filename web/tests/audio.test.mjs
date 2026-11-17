@@ -48,15 +48,17 @@ function engine(kind, target, outputRate = 48000, sourceRate = 48000) {
 }
 
 // Runs actual renderer code with a PCM impulse; excludes network and hardware latency.
-function simulate(e, { duration = 2, packetMs = 5, deliveryMs = 0, stallStart = -1, stallEnd = -1 } = {}) {
+function simulate(e, { duration = 2, packetMs = 5, deliveryMs = 0, stallStart = -1, stallEnd = -1, clockPpm = 0 } = {}) {
   const packetFrames = Math.round(e.sourceRate * packetMs / 1000);
   let sourceFrame = 0, nextPacketAt = 0, firstImpulse = null, nonzero = 0;
+  let silenceFrames = 0, longestSilence = 0;
   const renderMs = e.block * 1000 / e.outputRate;
   const startTime = e.sandbox.currentTime;
   for (let ms = 0; ms < duration * 1000; ms += renderMs) {
     e.sandbox.currentTime = startTime + ms / 1000;
     if (!(ms >= stallStart && ms < stallEnd)) {
-      const deliveredUntil = deliveryMs > 0 ? Math.floor(ms / deliveryMs) * deliveryMs : ms;
+      const batchMs = typeof deliveryMs === 'function' ? deliveryMs(ms) : deliveryMs;
+      const deliveredUntil = batchMs > 0 ? Math.floor(ms / batchMs) * batchMs : ms;
       while (nextPacketAt <= deliveredUntil) {
         const buffer = new ArrayBuffer(packetFrames * 4);
         const view = new DataView(buffer);
@@ -66,7 +68,7 @@ function simulate(e, { duration = 2, packetMs = 5, deliveryMs = 0, stallStart = 
           view.setInt16(i * 4, sample, true); view.setInt16(i * 4 + 2, -sample, true);
         }
         sourceFrame += packetFrames;
-        nextPacketAt += packetMs;
+        nextPacketAt += packetMs / (1 + clockPpm / 1e6);
         e.player.sendAudio(buffer);
       }
     }
@@ -77,9 +79,13 @@ function simulate(e, { duration = 2, packetMs = 5, deliveryMs = 0, stallStart = 
       assert.ok(Math.abs(left[i] + right[i]) < 0.00001, 'stereo channel polarity preserved');
       if (firstImpulse === null && Math.abs(left[i]) > 0.1) firstImpulse = ms + i * 1000 / e.outputRate;
       if (Math.abs(left[i]) > 0.01) nonzero++;
+      if (ms > 1000) {
+        silenceFrames = Math.abs(left[i]) < 0.00001 ? silenceFrames + 1 : 0;
+        longestSilence = Math.max(longestSilence, silenceFrames);
+      }
     }
   }
-  return { delayMs: firstImpulse - 100, firstImpulse, nonzero };
+  return { delayMs: firstImpulse - 100, firstImpulse, nonzero, longestSilenceMs: longestSilence * 1000 / e.outputRate };
 }
 
 for (const rate of [44100, 48000, 96000]) {
@@ -111,16 +117,54 @@ for (const kind of ['worklet', 'script']) {
     const stats = e.stats.filter(item => item.type === 'stats').at(-1);
     assert.ok(stats.underruns > 0, 'simulated outage is visible');
     assert.ok(stats.overruns > 0, 'old backlog is discarded on recovery');
-    assert.ok(stats.targetMs <= 40 && stats.bufferMs <= 55, JSON.stringify(stats));
+    assert.ok(stats.targetMs <= 80 && stats.bufferMs <= 90, JSON.stringify(stats));
     assert.equal(stats.playing, true, 'recovers to playback');
     e.player.setTarget(6);
     simulate(e, { duration: 1 });
     const low = e.stats.filter(item => item.type === 'stats').at(-1);
-    assert.ok(low.targetMs <= 8, 'switching profile clears the previous boost');
+    assert.ok(low.targetMs <= (kind === 'script' ? 24 : 8), 'switching profile clears the previous boost within the render-block floor');
     e.player.pause(); e.sandbox.currentTime += 1;
     const left = new Float32Array(e.block), right = new Float32Array(e.block);
     e.render(left, right);
     assert.ok(left.every(value => value === 0), 'paused output is silent');
     e.player.resume();
   });
+}
+
+for (const [kind, target, deliveryMs, ceiling] of [
+  ['worklet', 30, 45, 80], ['script', 30, 45, 80], ['worklet', 6, 15, 24]
+]) {
+  test(`${kind} low mode adapts to recurring ${deliveryMs} ms delivery batches`, () => {
+    const e = engine(kind, target);
+    const result = simulate(e, { duration: 8, deliveryMs });
+    const stats = e.stats.filter(item => item.type === 'stats').at(-1);
+    assert.ok(stats.underruns <= 3, `repeated starvation: ${JSON.stringify(stats)}`);
+    assert.ok(stats.overruns <= 3, `normal batches discarded: ${JSON.stringify(stats)}`);
+    assert.ok(result.longestSilenceMs < 2, `audible gaps after warmup: ${JSON.stringify(result)}`);
+    assert.ok(stats.targetMs <= ceiling && stats.bufferMs <= ceiling + deliveryMs + 10, JSON.stringify(stats));
+    console.log(`${kind}, ${deliveryMs} ms batches: ${stats.underruns} underruns, ${stats.overruns} backlog trims, target ${stats.targetMs} ms, longest silence ${result.longestSilenceMs.toFixed(2)} ms`);
+  });
+}
+
+for (const kind of ['worklet', 'script']) {
+  test(`${kind} releases temporary jitter margin after the link settles`, () => {
+    const e = engine(kind, 30);
+    const result = simulate(e, { duration: 30, deliveryMs: ms => ms < 4000 ? 45 : 0 });
+    const reports = e.stats.filter(item => item.type === 'stats');
+    const peak = Math.max(...reports.map(item => item.targetMs));
+    const final = reports.at(-1);
+    assert.ok(peak > 40 && final.targetMs < peak - 3, JSON.stringify({ peak, final }));
+    assert.ok(final.underruns <= 3 && final.overruns <= 3, JSON.stringify(final));
+    assert.ok(result.longestSilenceMs < 2, JSON.stringify(result));
+  });
+  for (const clockPpm of [-1000, 1000]) {
+    test(`${kind} stays continuous with ${clockPpm} ppm clock drift and 20 ms deliveries`, () => {
+      const e = engine(kind, 30, 44100);
+      const result = simulate(e, { duration: 30, deliveryMs: 20, clockPpm });
+      const stats = e.stats.filter(item => item.type === 'stats').at(-1);
+      assert.equal(stats.underruns, 0, JSON.stringify(stats));
+      assert.equal(stats.overruns, 0, JSON.stringify(stats));
+      assert.ok(result.longestSilenceMs < 2 && stats.bufferMs < 100, JSON.stringify({ stats, result }));
+    });
+  }
 }

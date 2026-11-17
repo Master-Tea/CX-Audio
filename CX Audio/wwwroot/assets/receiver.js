@@ -469,7 +469,7 @@
   async function createWorkletPlayer(context) {
     if (!context.audioWorklet || typeof window.AudioWorkletNode !== 'function') return null;
     try {
-      await context.audioWorklet.addModule('/assets/audio-worklet.js?v=1.3.4');
+      await context.audioWorklet.addModule('/assets/audio-worklet.js?v=1.4.3');
       const node = new window.AudioWorkletNode(context, 'cx-audio', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
@@ -519,7 +519,9 @@
     }
 
     let node = null;
-    for (const size of [256, 512, 1024]) {
+    // HTTP origins use this main-thread fallback. A 512-frame callback halves
+    // scheduling pressure versus 256 while keeping a ~11 ms block at 48 kHz.
+    for (const size of [512, 1024, 256]) {
       try {
         node = factory.call(context, size, 0, 2);
         break;
@@ -578,6 +580,9 @@
       state.step = state.baseStep;
       state.fade = 0;
       state.rateBias = 0;
+      state.lastLeft = 0;
+      state.lastRight = 0;
+      latencyPolicy.resetArrival(state);
     }
 
     function push(buffer) {
@@ -586,6 +591,8 @@
       const bytesPerFrame = channels * 2;
       const frames = Math.floor(buffer.byteLength / bytesPerFrame);
       if (frames <= 0) return;
+      latencyPolicy.observeArrival(state, frames * 1000 / state.sourceRate, performance.now(), blockMs);
+      updateTarget();
 
       const view = new DataView(buffer);
       const targetFrames = (state.targetMs / 1000) * state.sourceRate;
@@ -597,8 +604,6 @@
         state.fade = 0;
         available = state.writePos - state.readPos;
         state.overruns += 1;
-        state.boostMs = Math.max(0, state.boostMs - 20);
-        updateTarget();
       }
 
       if (available + frames > state.ringFrames) {
@@ -606,9 +611,6 @@
           ? state.writePos + frames - state.ringFrames
           : state.writePos;
         state.overruns += 1;
-        // Too much buffered audio means the target was raised too aggressively.
-        state.boostMs = Math.max(0, state.boostMs - 20);
-        updateTarget();
       }
 
       let index = state.writePos % state.ringFrames;
@@ -639,6 +641,7 @@
       }
 
       const targetFrames = (state.targetMs / 1000) * state.sourceRate;
+      latencyPolicy.trimCatchup(state, targetFrames);
       const primeFrames = Math.max(targetFrames, state.sourceRate * 0.005 + frames * state.baseStep + 2);
       if (!state.primed) {
         if (state.writePos - state.readPos < primeFrames) {
@@ -666,9 +669,9 @@
             left[i + j] = state.lastLeft * gain;
             if (right !== left) right[i + j] = state.lastRight * gain;
           }
-          // Raise the target for the rest of this session. Occasional Wi-Fi
-          // scheduling hiccups then become extra latency instead of stutter.
+          // Re-prime with a bounded safety margin, then drain it after stability.
           state.boostMs = latencyPolicy.increaseBoost(state.baseTargetMs, state.boostMs);
+          state.arrivalRiskAt = performance.now();
           updateTarget();
           break;
         }
@@ -691,10 +694,11 @@
       }
 
       const available = state.writePos - state.readPos;
-      const error = (available - targetFrames) / Math.max(targetFrames, 1);
+      const clockTarget = latencyPolicy.clockTarget(state.baseTargetMs, state.boostMs,
+        state.deliveryMs, blockMs) * state.sourceRate / 1000;
+      const error = (available - clockTarget) / Math.max(targetFrames, 1);
       const elapsed = frames / state.outputRate;
-      state.rateBias = Math.max(-0.005, Math.min(0.005, state.rateBias + error * elapsed * 0.0003));
-      const correction = Math.max(-0.01, Math.min(0.01, error * 0.002 + state.rateBias));
+      const correction = latencyPolicy.clockCorrection(state, error, elapsed);
       state.step = state.baseStep * (1 + correction);
       reportStats();
     }

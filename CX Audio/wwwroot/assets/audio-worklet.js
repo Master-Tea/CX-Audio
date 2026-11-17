@@ -1,4 +1,4 @@
-import './audio-latency.js?v=1.3.4';
+import './audio-latency.js?v=1.4.3';
 const latencyPolicy = globalThis.CXAudioLatency;
 
 /*
@@ -33,6 +33,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     this.fade = 0;
     this.lastLeft = 0;
     this.lastRight = 0;
+    latencyPolicy.resetArrival(this);
     this.allocate(48000);
     this.port.onmessage = (event) => this.handleMessage(event.data);
   }
@@ -49,6 +50,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     this.fade = 0;
     this.baseStep = this.sourceRate / this.outputRate;
     this.step = this.baseStep;
+    latencyPolicy.resetArrival(this);
   }
 
   reset() {
@@ -62,6 +64,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     this.rateBias = 0;
     this.lastLeft = 0;
     this.lastRight = 0;
+    latencyPolicy.resetArrival(this);
   }
 
   handleMessage(message) {
@@ -118,6 +121,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     const bytesPerFrame = this.channels * 2;
     const frames = Math.floor(buffer.byteLength / bytesPerFrame);
     if (frames <= 0) return;
+    latencyPolicy.observeArrival(this, frames * 1000 / this.sourceRate, currentTime * 1000);
 
     let available = this.writePos - this.readPos;
     const targetFrames = (latencyPolicy.effectiveTarget(this.targetMs, this.boostMs) / 1000) * this.sourceRate;
@@ -127,14 +131,12 @@ class CxAudioProcessor extends AudioWorkletProcessor {
       this.fade = 0;
       available = this.writePos - this.readPos;
       this.overruns += 1;
-      this.boostMs = Math.max(0, this.boostMs - 20);
     }
 
     if (available + frames > this.ringFrames) {
       if (this.primed) {
         this.readPos = this.writePos + frames - this.ringFrames;
         this.overruns += 1;
-        this.boostMs = Math.max(0, this.boostMs - 20);
       } else {
         this.readPos = this.writePos;
       }
@@ -174,9 +176,10 @@ class CxAudioProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Low mode has a bounded jitter budget; no hidden safety/priming buffers.
+    // Adapt only within the selected profile's bounded jitter budget.
     const effectiveTargetMs = latencyPolicy.effectiveTarget(this.targetMs, this.boostMs);
     const targetFrames = (effectiveTargetMs / 1000) * this.sourceRate;
+    latencyPolicy.trimCatchup(this, targetFrames);
     const primeFrames = Math.max(targetFrames, this.sourceRate * 0.005 + frames * this.baseStep + 2);
     if (!this.primed) {
       if (this.writePos - this.readPos < primeFrames) {
@@ -189,11 +192,8 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     }
 
     const fadeStep = 1 / Math.max(1, this.outputRate * (this.baseTargetMs <= 30 ? 0.003 : 0.018));
-    let underrun = false;
-
     for (let i = 0; i < frames; i += 1) {
       if (this.writePos - this.readPos <= 1) {
-        underrun = true;
         this.underruns += 1;
         this.playing = false;
         this.primed = false;
@@ -207,6 +207,7 @@ class CxAudioProcessor extends AudioWorkletProcessor {
           if (right !== left) right[i + j] = this.lastRight * gain;
         }
         this.boostMs = latencyPolicy.increaseBoost(this.baseTargetMs, this.boostMs);
+        this.arrivalRiskAt = currentTime * 1000;
         break;
       }
 
@@ -228,13 +229,14 @@ class CxAudioProcessor extends AudioWorkletProcessor {
     }
 
     const available = this.writePos - this.readPos;
-    const error = (available - targetFrames) / Math.max(targetFrames, 1);
+    const clockTarget = latencyPolicy.clockTarget(this.baseTargetMs, this.boostMs,
+      this.deliveryMs, frames * 1000 / this.outputRate) * this.sourceRate / 1000;
+    const error = (available - clockTarget) / Math.max(targetFrames, 1);
     // Integral term learns the listening device's actual clock rate. A
     // proportional-only controller can leave the buffer permanently below
     // target on devices whose audio clock differs slightly from 48 kHz.
     const elapsed = frames / this.outputRate;
-    this.rateBias = Math.max(-0.005, Math.min(0.005, this.rateBias + error * elapsed * 0.0003));
-    const correction = Math.max(-0.01, Math.min(0.01, error * 0.002 + this.rateBias));
+    const correction = latencyPolicy.clockCorrection(this, error, elapsed);
     this.step = this.baseStep * (1 + correction);
 
     this.reportStats();
